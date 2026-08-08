@@ -22,8 +22,8 @@ func main() {
 	c.
 		RouteHandler("/public/", http.FileServerFS(publicFiles)).
 		Route("/g/{gameID}/lobby", h.Lobby).
-		// Route("/g/{gameID}/lobby/status", h.LobbyStatus).
 		Route("/g/{gameID}/lobby-qr", h.LobbyQR).
+		Route("/g/{gameID}/lobby-status", h.LobbyStatus).
 		Route("/g/{gameID}/join-game", h.JoinGame).
 		Route("/g/{gameID}/p/{playerID}/controller", h.Controller).
 		Route("/g/{gameID}/p/{playerID}/ws", h.ControllerSocket).

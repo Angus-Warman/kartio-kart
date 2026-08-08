@@ -1,9 +1,14 @@
 {{ define "content" }}
-<h1 style="text-align: center">Lobby</h1>
-<div class="grid">
+<div>
+    <h1>Lobby</h1>
+
     <a href="/g/{{ .GameID }}/join-game">
         <img src="/g/{{ .GameID }}/lobby-qr" alt="Join game">
     </a>
+
+    <div hx-get="/g/{{ .GameID }}/lobby-status" hx-trigger="load">
+        <p>Waiting for players to join...</p>
+    </div>
 
     <a href="/g/{{ .GameID }}/match">Start game</a>
 </div>

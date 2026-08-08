@@ -309,8 +309,8 @@
             const angle = Math.atan2(dy, dx);
             knobPos = { x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r };
             state.joystick = {
-                x: round2(Math.cos(angle) * (r / JOYSTICK_RADIUS)),
-                y: round2(Math.sin(angle) * (r / JOYSTICK_RADIUS)),
+                x: round1dp(Math.cos(angle) * (r / JOYSTICK_RADIUS)),
+                y: round1dp(Math.sin(angle) * (r / JOYSTICK_RADIUS)),
             };
         }
 
@@ -334,16 +334,19 @@
         }
 
         function dist(ax, ay, bx, by) { return Math.sqrt((ax - bx) ** 2 + (ay - by) ** 2); }
-        function round2(v) { return Math.round(v * 100) / 100; }
+        function round1dp(v) { return Math.round(v * 10) / 10; }
 
         const ws = new WebSocket({{ .SocketURL }})
 
         setInterval(() => {
             if (ws.readyState !== WebSocket.OPEN) return;
             ws.send(JSON.stringify({
-                t: Date.now(),
-                js: { x: state.joystick.x, y: state.joystick.y },
-                btn: { A: state.buttons.A, B: state.buttons.B, X: state.buttons.X, Y: state.buttons.Y },
+                js_x: state.joystick.x,
+                js_y: state.joystick.y,
+                btn_a: state.buttons.A,
+                btn_b: state.buttons.B,
+                btn_x: state.buttons.X,
+                btn_y: state.buttons.Y
             }));
         }, 1000 / TICK_HZ);
 
