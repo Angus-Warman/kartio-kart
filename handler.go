@@ -64,13 +64,17 @@ type controllerData struct {
 	SocketURL string
 }
 
+type matchData struct {
+	SocketURL string
+}
+
 type Handler struct {
 	game      *Game
 	templates map[string]*template.Template
 }
 
 func NewHandler() (*Handler, error) {
-	pages := []string{"lobby", "controller"}
+	pages := []string{"lobby", "controller", "match"}
 
 	templates := make(map[string]*template.Template, len(pages))
 
@@ -185,19 +189,42 @@ func (h *Handler) ControllerSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.WebSocket(func(socket *response.WebSocketConnection) {
-		log.Println("connecting to socket...")
-
-		socket.Send("connected")
+		log.Println("connecting to match socket...")
 
 		for {
-			data, err := socket.ReadMessage()
+			_, err := socket.ReadMessage()
 
 			if err != nil {
 				log.Println(err)
 				return
 			}
+		}
+	}).ServeHTTP(w, r)
+}
 
-			log.Println(data)
+func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
+	gameID := r.PathValue("gameID")
+
+	socketURL := fmt.Sprintf("ws://%v/g/%v/match/ws", r.Host, gameID)
+
+	h.render(w, "match", matchData{
+		SocketURL: socketURL,
+	})
+}
+
+func (h *Handler) MatchSocket(w http.ResponseWriter, r *http.Request) {
+	response.WebSocket(func(socket *response.WebSocketConnection) {
+		log.Println("connecting to match socket...")
+
+		socket.Send("connected")
+
+		for {
+			_, err := socket.ReadMessage()
+
+			if err != nil {
+				log.Println(err)
+				return
+			}
 		}
 	}).ServeHTTP(w, r)
 }

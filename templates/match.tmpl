@@ -1,0 +1,9 @@
+{{ define "content" }}
+
+<script>
+    const ws = new WebSocket({{ .SocketURL }})
+    ws.addEventListener("message", (event) => {
+        console.log(event)
+    })
+</script>
+{{ end }}
