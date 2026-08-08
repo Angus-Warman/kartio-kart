@@ -100,12 +100,14 @@
 
             const { x, y, z } = racer.Physics;
 
-            sphere.position.set(x, y, z);
+            // Game physics use X/Y as the ground plane and Z as up.
+            // Three.js uses X/Z as the ground plane and Y as up, so swap Y/Z.
+            sphere.position.set(x, z, y);
 
             // Keep this racer's chase-cam just behind and above their sphere.
             const cam = cameras[racer.Index];
-            cam.position.set(x, y + 6, z + 8);
-            cam.lookAt(x, y, z);
+            cam.position.set(x, z + 6, y + 8);
+            cam.lookAt(x, z, y);
         }
     });
 
