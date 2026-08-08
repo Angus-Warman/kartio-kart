@@ -2,7 +2,16 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"sync"
+	"time"
+)
+
+const (
+	tickInterval = 16 * time.Millisecond // ~60 Hz
+	spawnRadius  = 2.0                   // distance from origin where players spawn
+	accelScale   = 10.0                  // joystick-to-acceleration multiplier
+	drag         = 0.85                  // velocity damping per tick (0=instant stop, 1=no drag)
 )
 
 type Player struct {
@@ -32,12 +41,15 @@ type PhysicsState struct {
 	accelZ float32
 }
 
+type GameTick map[string]PhysicsState
+
 type Game struct {
 	mu           sync.Mutex
 	id           string
 	players      map[string]*Player
 	maxPlayers   int
 	playerJoined chan struct{}
+	tickCh       chan GameTick
 }
 
 func NewGame() *Game {
@@ -46,6 +58,7 @@ func NewGame() *Game {
 		maxPlayers:   4,
 		players:      make(map[string]*Player),
 		playerJoined: make(chan struct{}, 1),
+		tickCh:       make(chan GameTick, 1),
 	}
 }
 
@@ -110,11 +123,71 @@ func (g *Game) StatusMessage() string {
 	return msg
 }
 
+// spawnPlayers arranges all current players evenly around a circle in the XY plane.
+// With a single player they land at (spawnRadius, 0); with N players each is
+// 360/N degrees apart so nobody starts on top of anyone else.
+func (g *Game) spawnPlayers() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	n := len(g.players)
+	if n == 0 {
+		return
+	}
+
+	i := 0
+	for _, p := range g.players {
+		angle := 2 * math.Pi * float64(i) / float64(n)
+		p.Physics = PhysicsState{
+			X: float32(spawnRadius * math.Cos(angle)),
+			Y: float32(spawnRadius * math.Sin(angle)),
+			Z: 0,
+		}
+		i++
+	}
+}
+
 func (g *Game) Start() {
+	g.spawnPlayers()
 	go g.Run()
 }
 
 func (g *Game) Run() {
-	for {
+	ticker := time.NewTicker(tickInterval)
+	defer ticker.Stop()
+
+	dt := float32(tickInterval.Seconds())
+
+	tick := make(GameTick)
+
+	for range ticker.C {
+		g.mu.Lock()
+		for _, p := range g.players {
+			ph := &p.Physics
+			ctrl := p.Controller
+
+			// Joystick drives acceleration on X/Y axes.
+			ph.accelX = ctrl.JsX * accelScale
+			ph.accelY = ctrl.JsY * accelScale
+			// accelZ stays zero unless something else sets it (e.g. jump via BtnA).
+
+			// Integrate acceleration into velocity, then apply drag.
+			ph.velX = (ph.velX + ph.accelX*dt) * drag
+			ph.velY = (ph.velY + ph.accelY*dt) * drag
+			ph.velZ = (ph.velZ + ph.accelZ*dt) * drag
+
+			// Integrate velocity into position.
+			ph.X += ph.velX * dt
+			ph.Y += ph.velY * dt
+			ph.Z += ph.velZ * dt
+		}
+
+		for id, p := range g.players {
+			tick[id] = p.Physics
+		}
+
+		g.tickCh <- tick
+
+		g.mu.Unlock()
 	}
 }

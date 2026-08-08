@@ -1,11 +1,168 @@
 {{ define "content" }}
-<div class="grid">
-</div>
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    body {
+        background: #0d0d12;
+        overflow: hidden;
+    }
+
+    canvas {
+        display: block;
+    }
+</style>
+
+<div id="scene-container"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
 <script>
-    const ws = new WebSocket({{ .SocketURL }})
+    const container = document.getElementById('scene-container');
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0d0d12);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.setPixelRatio(window.devicePixelRatio);
+    container.appendChild(renderer.domElement);
+
+    // One chase-cam per player slot.
+    // Slot layout:  [0] top-left  | [1] top-right
+    //               [2] bot-left  | [3] bot-right
+    // Initial positions are defaults; overwritten on first WebSocket frame.
+    function makeCamera(x, y, z, tx, ty, tz) {
+        const cam = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+        cam.position.set(x, y, z);
+        cam.lookAt(tx, ty, tz);
+        return cam;
+    }
+
+    const cameras = [
+        makeCamera(-8,  6,  8,  0, 0, 0),   // player 0
+        makeCamera( 8,  6,  8,  0, 0, 0),   // player 1
+        makeCamera(-8,  6, -8,  0, 0, 0),   // player 2
+        makeCamera( 8,  6, -8,  0, 0, 0),   // player 3
+    ];
+
+    // Map playerID → viewport slot (0-3). Assigned in arrival order.
+    const playerSlot = new Map();
+    let nextSlot = 0;
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(5, 15, 5);
+    directionalLight.castShadow = true;
+    scene.add(directionalLight);
+
+    const arenaSize = 20;
+
+    const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(arenaSize, arenaSize),
+        new THREE.MeshStandardMaterial({ color: 0x1a1a24 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const grid = new THREE.GridHelper(arenaSize, 20, 0x2a2a38, 0x22222e);
+    scene.add(grid);
+
+    const COLOURS = [0xff4444, 0x44ff88, 0x4488ff, 0xffcc00];
+    const playerSpheres = new Map();
+    let colourIndex = 0;
+
+    function ensurePlayer(playerID) {
+        if (!playerSpheres.has(playerID)) {
+            const sphere = new THREE.Mesh(
+                new THREE.SphereGeometry(0.5, 32, 32),
+                new THREE.MeshStandardMaterial({ color: COLOURS[colourIndex++ % COLOURS.length] })
+            );
+            sphere.castShadow = true;
+            scene.add(sphere);
+            playerSpheres.set(playerID, sphere);
+
+            // Assign a chase-cam slot (up to 4 players).
+            if (nextSlot < 4) {
+                playerSlot.set(playerID, nextSlot++);
+            }
+        }
+
+        return playerSpheres.get(playerID);
+    }
+
+    const ws = new WebSocket({{ .SocketURL }});
+
     ws.addEventListener("message", (event) => {
-        console.log(event)
-    })
+        let data;
+
+        try {
+            data = JSON.parse(event.data);
+        } catch {
+            return;
+        }
+
+        for (const [playerID, coords] of Object.entries(data)) {
+            const sphere = ensurePlayer(playerID);
+            sphere.position.set(coords.x, coords.y, coords.z);
+
+            // Keep the player's chase-cam just behind and above their sphere.
+            const slot = playerSlot.get(playerID);
+            if (slot !== undefined) {
+                const cam = cameras[slot];
+                cam.position.set(coords.x, coords.y + 6, coords.z + 8);
+                cam.lookAt(coords.x, coords.y, coords.z);
+            }
+        }
+    });
+
+    /* ── Viewport helpers ── */
+
+    // Returns {left, bottom, width, height} for each quadrant in pixels.
+    // Three.js setViewport/setScissor use a bottom-left origin.
+    function quadrants() {
+        const W = window.innerWidth;
+        const H = window.innerHeight;
+        const hw = Math.floor(W / 2);
+        const hh = Math.floor(H / 2);
+        return [
+            { left: 0,  bottom: hh, width: hw, height: hh }, // slot 0
+            { left: hw, bottom: hh, width: hw, height: hh }, // slot 1
+            { left: 0,  bottom: 0,  width: hw, height: hh }, // slot 2
+            { left: hw, bottom: 0,  width: hw, height: hh }, // slot 3
+        ];
+    }
+
+    /* ── Animation loop ── */
+    function animate() {
+        requestAnimationFrame(animate);
+
+        renderer.setScissorTest(true);
+
+        const views = quadrants();
+        views.forEach((v, i) => {
+            renderer.setViewport(v.left, v.bottom, v.width, v.height);
+            renderer.setScissor(v.left, v.bottom, v.width, v.height);
+
+            cameras[i].aspect = v.width / v.height;
+            cameras[i].updateProjectionMatrix();
+
+            renderer.render(scene, cameras[i]);
+        });
+    }
+
+    animate();
+
+    window.addEventListener('resize', () => {
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        // Aspect ratios are recalculated each frame inside animate(), nothing else needed.
+    });
 </script>
 {{ end }}
