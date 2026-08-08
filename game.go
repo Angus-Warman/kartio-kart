@@ -50,6 +50,7 @@ type Game struct {
 	maxPlayers   int
 	playerJoined chan struct{}
 	tickCh       chan GameTick
+	started      bool
 }
 
 func NewGame() *Game {
@@ -123,9 +124,6 @@ func (g *Game) StatusMessage() string {
 	return msg
 }
 
-// spawnPlayers arranges all current players evenly around a circle in the XY plane.
-// With a single player they land at (spawnRadius, 0); with N players each is
-// 360/N degrees apart so nobody starts on top of anyone else.
 func (g *Game) spawnPlayers() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -148,6 +146,11 @@ func (g *Game) spawnPlayers() {
 }
 
 func (g *Game) Start() {
+	if g.started {
+		return
+	}
+
+	g.started = true
 	g.spawnPlayers()
 	go g.Run()
 }

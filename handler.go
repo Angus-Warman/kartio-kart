@@ -38,7 +38,7 @@ type matchData struct {
 }
 
 type Handler struct {
-	game         *Game
+	g            *Game
 	templates    map[string]*template.Template
 	mu           sync.Mutex
 	matchSockets []*response.WebSocketConnection
@@ -60,7 +60,7 @@ func NewHandler() (*Handler, error) {
 	}
 
 	return &Handler{
-		game:      NewGame(),
+		g:         NewGame(),
 		templates: templates,
 	}, nil
 }
@@ -102,7 +102,7 @@ func (h *Handler) render(w http.ResponseWriter, page string, data any) {
 
 func (h *Handler) RedirectToLobby(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/" {
-		url := fmt.Sprintf("/g/%v/lobby", h.game.id)
+		url := fmt.Sprintf("/g/%v/lobby", h.g.id)
 		http.Redirect(w, r, url, http.StatusSeeOther)
 		return
 	}
@@ -111,12 +111,12 @@ func (h *Handler) RedirectToLobby(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Lobby(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "lobby", lobbyData{GameID: h.game.id})
+	h.render(w, "lobby", lobbyData{GameID: h.g.id})
 }
 
 func (h *Handler) LobbyQR(w http.ResponseWriter, r *http.Request) {
 	png, err := qrcode.Encode(
-		fmt.Sprintf("http://%v/g/%v/join-game", r.Host, h.game.id),
+		fmt.Sprintf("http://%v/g/%v/join-game", r.Host, h.g.id),
 		qrcode.Medium,
 		200,
 	)
@@ -133,19 +133,19 @@ func (h *Handler) LobbyQR(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) LobbyStatus(w http.ResponseWriter, r *http.Request) {
 	stream := response.Stream(w, r)
 
-	if err := stream.Send(h.game.StatusMessage()); err != nil {
+	if err := stream.Send(h.g.StatusMessage()); err != nil {
 		log.Println(err)
 		return
 	}
 
 	for {
 		select {
-		case <-h.game.playerJoined:
+		case <-h.g.playerJoined:
 		case <-r.Context().Done():
 			return
 		}
 
-		if err := stream.Send(h.game.StatusMessage()); err != nil {
+		if err := stream.Send(h.g.StatusMessage()); err != nil {
 			log.Println(err)
 			return
 		}
@@ -155,7 +155,7 @@ func (h *Handler) LobbyStatus(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) JoinGame(w http.ResponseWriter, r *http.Request) {
 	gameID := r.PathValue("gameID")
 	playerID := fmt.Sprint(11111 + rand.Intn(88888))
-	h.game.AddPlayer(playerID)
+	h.g.AddPlayer(playerID)
 
 	redirectTo := fmt.Sprintf("http://%v/g/%v/p/%v/controller", r.Host, gameID, playerID)
 	http.Redirect(w, r, redirectTo, http.StatusSeeOther)
@@ -165,7 +165,7 @@ func (h *Handler) Controller(w http.ResponseWriter, r *http.Request) {
 	gameID := r.PathValue("gameID")
 	playerID := r.PathValue("playerID")
 
-	if !h.game.PlayerExists(playerID) {
+	if !h.g.PlayerExists(playerID) {
 		http.NotFound(w, r)
 		return
 	}
@@ -177,14 +177,14 @@ func (h *Handler) Controller(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *Handler) ControllerSocket(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) ControllerToServer(w http.ResponseWriter, r *http.Request) {
 	log.Println("connecting socket")
 
 	gameID := r.PathValue("gameID")
 	playerID := r.PathValue("playerID")
 	_ = gameID
 
-	g := h.game
+	g := h.g
 
 	if !g.PlayerExists(playerID) {
 		http.NotFound(w, r)
@@ -217,6 +217,8 @@ func (h *Handler) ControllerSocket(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 	gameID := r.PathValue("gameID")
 
+	h.g.Start()
+
 	socketURL := fmt.Sprintf("ws://%v/g/%v/match/ws", r.Host, gameID)
 
 	h.render(w, "match", matchData{
@@ -224,17 +226,18 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *Handler) MatchSocket(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) ServerToMatch(w http.ResponseWriter, r *http.Request) {
 	response.WebSocket(func(socket *response.WebSocketConnection) {
-		log.Println("connecting to match socket...")
-
 		h.addMatchSocket(socket)
 		defer h.removeMatchSocket(socket)
 
 		socket.Send("connected")
 
 		for {
-			_, err := socket.ReadMessage()
+			gameData := <-h.g.tickCh
+			msg := encode(gameData)
+
+			err := socket.Send(msg)
 
 			if err != nil {
 				log.Println(err)
@@ -242,6 +245,17 @@ func (h *Handler) MatchSocket(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}).ServeHTTP(w, r)
+}
+
+func encode(data any) string {
+	b, err := json.Marshal(data)
+
+	if err != nil {
+		log.Println(err)
+		return err.Error()
+	}
+
+	return string(b)
 }
 
 func (h *Handler) addMatchSocket(socket *response.WebSocketConnection) {

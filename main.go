@@ -26,9 +26,9 @@ func main() {
 		Route("/g/{gameID}/lobby-status", h.LobbyStatus).
 		Route("/g/{gameID}/join-game", h.JoinGame).
 		Route("/g/{gameID}/p/{playerID}/controller", h.Controller).
-		Route("/g/{gameID}/p/{playerID}/ws", h.ControllerSocket).
+		Route("/g/{gameID}/p/{playerID}/ws", h.ControllerToServer).
 		Route("/g/{gameID}/match", h.Match).
-		Route("/g/{gameID}/match/ws", h.MatchSocket).
+		Route("/g/{gameID}/match/ws", h.ServerToMatch).
 		Route("/", h.RedirectToLobby).
 		Run()
 }
