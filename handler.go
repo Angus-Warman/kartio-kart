@@ -19,120 +19,13 @@ var templatesFS embed.FS
 
 const numPlayers = 4
 
-type Player struct {
-	ID    string
-	state controllerState
-}
-
-type controllerState struct {
-	JsX  float32 `json:"js_x"`
-	JsY  float32 `json:"js_y"`
-	BtnA bool    `json:"btn_a"`
-	BtnB bool    `json:"btn_b"`
-	BtnX bool    `json:"btn_x"`
-	BtnY bool    `json:"btn_y"`
-}
-
 type packet struct {
 	PlayerID string          `json:"playerID"`
 	State    controllerState `json:"state"`
 }
 
-type Game struct {
-	mu           sync.Mutex
-	id           string
-	players      map[string]*Player
-	matchSockets []*response.WebSocketConnection
-	playerJoined chan struct{}
-}
-
-func (g *Game) addPlayer(id string) {
-	g.mu.Lock()
-
-	g.players[id] = &Player{
-		ID: id,
-	}
-
-	g.mu.Unlock()
-
-	select {
-	case g.playerJoined <- struct{}{}:
-	default:
-	}
-}
-
-func (g *Game) findPlayer(id string) (*Player, bool) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	p, ok := g.players[id]
-
-	return p, ok
-}
-
-func (g *Game) playerExists(id string) bool {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	_, ok := g.players[id]
-
-	return ok
-}
-
-func (g *Game) handleMessage(playerID string, state controllerState) {
-	g.mu.Lock()
-
-	p, ok := g.players[playerID]
-
-	if !ok || p.state == state {
-		g.mu.Unlock()
-		return
-	}
-
-	p.state = state
-
-	data, err := json.Marshal(packet{
-		PlayerID: playerID,
-		State:    state,
-	})
-
-	sockets := g.matchSockets
-	g.mu.Unlock()
-
-	if err != nil {
-		log.Println(err)
-		return
-	}
-
-	for _, socket := range sockets {
-		if err := socket.Send(string(data)); err != nil {
-			log.Println(err)
-		}
-	}
-}
-
-func (g *Game) AddMatchSocket(socket *response.WebSocketConnection) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	g.matchSockets = append(g.matchSockets, socket)
-}
-
-func (g *Game) RemoveMatchSocket(socket *response.WebSocketConnection) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	for i, s := range g.matchSockets {
-		if s == socket {
-			g.matchSockets = append(g.matchSockets[:i], g.matchSockets[i+1:]...)
-			return
-		}
-	}
-}
-
 type lobbyData struct {
-	GameID  string
-	Players []Player
+	GameID string
 }
 
 type controllerData struct {
@@ -140,12 +33,15 @@ type controllerData struct {
 }
 
 type matchData struct {
+	PlayerIDs []string
 	SocketURL string
 }
 
 type Handler struct {
-	game      *Game
-	templates map[string]*template.Template
+	game         *Game
+	templates    map[string]*template.Template
+	mu           sync.Mutex
+	matchSockets []*response.WebSocketConnection
 }
 
 func NewHandler() (*Handler, error) {
@@ -164,13 +60,28 @@ func NewHandler() (*Handler, error) {
 	}
 
 	return &Handler{
-		game: &Game{
-			id:           "4321",
-			players:      make(map[string]*Player),
-			playerJoined: make(chan struct{}, 1),
-		},
+		game:      NewGame(),
 		templates: templates,
 	}, nil
+}
+
+func (h *Handler) broadcastPacket(p packet) {
+	data, err := json.Marshal(p)
+
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	h.mu.Lock()
+	sockets := h.matchSockets
+	h.mu.Unlock()
+
+	for _, socket := range sockets {
+		if err := socket.Send(string(data)); err != nil {
+			log.Println(err)
+		}
+	}
 }
 
 func (h *Handler) render(w http.ResponseWriter, page string, data any) {
@@ -199,14 +110,8 @@ func (h *Handler) RedirectToLobby(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "not found", 404)
 }
 
-func (g *Game) lobbyData() lobbyData {
-	return lobbyData{
-		GameID: g.id,
-	}
-}
-
 func (h *Handler) Lobby(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "lobby", h.game.lobbyData())
+	h.render(w, "lobby", lobbyData{GameID: h.game.id})
 }
 
 func (h *Handler) LobbyQR(w http.ResponseWriter, r *http.Request) {
@@ -223,21 +128,6 @@ func (h *Handler) LobbyQR(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "image/png")
 	w.Write(png)
-}
-
-func (g *Game) lobbyStatusMessage() string {
-	var msg string
-
-	switch numPlayers := len(g.players); numPlayers {
-	case 0:
-		msg = "Waiting for players to join..."
-	case 1:
-		msg = "1 player in lobby"
-	default:
-		msg = fmt.Sprintf("%v players in lobby", numPlayers)
-	}
-
-	return msg
 }
 
 func (h *Handler) LobbyStatus(w http.ResponseWriter, r *http.Request) {
@@ -319,7 +209,12 @@ func (h *Handler) ControllerSocket(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			g.handleMessage(playerID, state)
+			if g.handleMessage(playerID, state) {
+				h.broadcastPacket(packet{
+					PlayerID: playerID,
+					State:    state,
+				})
+			}
 		}
 	}).ServeHTTP(w, r)
 }
@@ -335,13 +230,11 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) MatchSocket(w http.ResponseWriter, r *http.Request) {
-	g := h.game
-
 	response.WebSocket(func(socket *response.WebSocketConnection) {
 		log.Println("connecting to match socket...")
 
-		g.AddMatchSocket(socket)
-		defer g.RemoveMatchSocket(socket)
+		h.addMatchSocket(socket)
+		defer h.removeMatchSocket(socket)
 
 		socket.Send("connected")
 
@@ -354,4 +247,23 @@ func (h *Handler) MatchSocket(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}).ServeHTTP(w, r)
+}
+
+func (h *Handler) addMatchSocket(socket *response.WebSocketConnection) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.matchSockets = append(h.matchSockets, socket)
+}
+
+func (h *Handler) removeMatchSocket(socket *response.WebSocketConnection) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for i, s := range h.matchSockets {
+		if s == socket {
+			h.matchSockets = append(h.matchSockets[:i], h.matchSockets[i+1:]...)
+			return
+		}
+	}
 }
