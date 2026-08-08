@@ -16,8 +16,13 @@ const (
 
 type Player struct {
 	ID         string
+	Racer      *Racer
 	Controller ControllerState
-	Physics    PhysicsState
+}
+
+type Racer struct {
+	Index   int // 0-3
+	Physics PhysicsState
 }
 
 type ControllerState struct {
@@ -41,12 +46,13 @@ type PhysicsState struct {
 	accelZ float32
 }
 
-type GameTick map[string]PhysicsState
+type GameTick []*Racer
 
 type Game struct {
 	mu           sync.Mutex
 	id           string
 	players      map[string]*Player
+	racers       []*Racer
 	maxPlayers   int
 	playerJoined chan struct{}
 	tickCh       chan GameTick
@@ -54,28 +60,56 @@ type Game struct {
 }
 
 func NewGame() *Game {
+	racers := []*Racer{
+		{
+			Index: 0,
+		},
+		{
+			Index: 1,
+		},
+		{
+			Index: 2,
+		},
+		{
+			Index: 3,
+		},
+	}
+
 	return &Game{
 		id:           "4321",
 		maxPlayers:   4,
 		players:      make(map[string]*Player),
 		playerJoined: make(chan struct{}, 1),
 		tickCh:       make(chan GameTick, 1),
+		racers:       racers,
 	}
 }
 
-func (g *Game) AddPlayer(id string) {
+func (g *Game) AddPlayer(id string) bool {
 	g.mu.Lock()
+	defer g.mu.Unlock()
 
-	g.players[id] = &Player{
-		ID: id,
+	if len(g.players) >= g.maxPlayers {
+		return false
 	}
 
-	g.mu.Unlock()
+	rIdx := len(g.players)
+
+	racer := g.racers[rIdx]
+
+	p := &Player{
+		ID:    id,
+		Racer: racer,
+	}
+
+	g.players[id] = p
 
 	select {
 	case g.playerJoined <- struct{}{}:
 	default:
 	}
+
+	return true
 }
 
 func (g *Game) FindPlayer(id string) (*Player, bool) {
@@ -124,7 +158,7 @@ func (g *Game) StatusMessage() string {
 	return msg
 }
 
-func (g *Game) spawnPlayers() {
+func (g *Game) spawnRacers() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -133,15 +167,14 @@ func (g *Game) spawnPlayers() {
 		return
 	}
 
-	i := 0
-	for _, p := range g.players {
+	for i, r := range g.racers {
 		angle := 2 * math.Pi * float64(i) / float64(n)
-		p.Physics = PhysicsState{
+
+		r.Physics = PhysicsState{
 			X: float32(spawnRadius * math.Cos(angle)),
 			Y: float32(spawnRadius * math.Sin(angle)),
 			Z: 0,
 		}
-		i++
 	}
 }
 
@@ -151,7 +184,7 @@ func (g *Game) Start() {
 	}
 
 	g.started = true
-	g.spawnPlayers()
+	g.spawnRacers()
 	go g.Run()
 }
 
@@ -161,12 +194,10 @@ func (g *Game) Run() {
 
 	dt := float32(tickInterval.Seconds())
 
-	tick := make(GameTick)
-
 	for range ticker.C {
 		g.mu.Lock()
 		for _, p := range g.players {
-			ph := &p.Physics
+			ph := &p.Racer.Physics
 			ctrl := p.Controller
 
 			// Joystick drives acceleration on X/Y axes.
@@ -185,11 +216,7 @@ func (g *Game) Run() {
 			ph.Z += ph.velZ * dt
 		}
 
-		for id, p := range g.players {
-			tick[id] = p.Physics
-		}
-
-		g.tickCh <- tick
+		g.tickCh <- g.racers
 
 		g.mu.Unlock()
 	}

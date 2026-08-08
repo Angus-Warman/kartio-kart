@@ -155,7 +155,11 @@ func (h *Handler) LobbyStatus(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) JoinGame(w http.ResponseWriter, r *http.Request) {
 	gameID := r.PathValue("gameID")
 	playerID := fmt.Sprint(11111 + rand.Intn(88888))
-	h.g.AddPlayer(playerID)
+	canJoin := h.g.AddPlayer(playerID)
+
+	if !canJoin {
+		return // TODO: Return error message
+	}
 
 	redirectTo := fmt.Sprintf("http://%v/g/%v/p/%v/controller", r.Host, gameID, playerID)
 	http.Redirect(w, r, redirectTo, http.StatusSeeOther)
@@ -230,8 +234,6 @@ func (h *Handler) ServerToMatch(w http.ResponseWriter, r *http.Request) {
 	response.WebSocket(func(socket *response.WebSocketConnection) {
 		h.addMatchSocket(socket)
 		defer h.removeMatchSocket(socket)
-
-		socket.Send("connected")
 
 		for {
 			gameData := <-h.g.tickCh

@@ -28,32 +28,11 @@
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.shadowMap.enabled = true;
     renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.shadowMap.enabled = true;
     container.appendChild(renderer.domElement);
 
-    // One chase-cam per player slot.
-    // Slot layout:  [0] top-left  | [1] top-right
-    //               [2] bot-left  | [3] bot-right
-    // Initial positions are defaults; overwritten on first WebSocket frame.
-    function makeCamera(x, y, z, tx, ty, tz) {
-        const cam = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
-        cam.position.set(x, y, z);
-        cam.lookAt(tx, ty, tz);
-        return cam;
-    }
-
-    const cameras = [
-        makeCamera(-8,  6,  8,  0, 0, 0),   // player 0
-        makeCamera( 8,  6,  8,  0, 0, 0),   // player 1
-        makeCamera(-8,  6, -8,  0, 0, 0),   // player 2
-        makeCamera( 8,  6, -8,  0, 0, 0),   // player 3
-    ];
-
-    // Map playerID → viewport slot (0-3). Assigned in arrival order.
-    const playerSlot = new Map();
-    let nextSlot = 0;
-
+    /* ── Lights ── */
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     scene.add(ambientLight);
 
@@ -62,6 +41,7 @@
     directionalLight.castShadow = true;
     scene.add(directionalLight);
 
+    /* ── Arena ── */
     const arenaSize = 20;
 
     const ground = new THREE.Mesh(
@@ -75,51 +55,57 @@
     const grid = new THREE.GridHelper(arenaSize, 20, 0x2a2a38, 0x22222e);
     scene.add(grid);
 
+    /* ── Racers ── */
     const COLOURS = [0xff4444, 0x44ff88, 0x4488ff, 0xffcc00];
-    const playerSpheres = new Map();
-    let colourIndex = 0;
+    const racerSpheres = new Map();
 
-    function ensurePlayer(playerID) {
-        if (!playerSpheres.has(playerID)) {
-            const sphere = new THREE.Mesh(
-                new THREE.SphereGeometry(0.5, 32, 32),
-                new THREE.MeshStandardMaterial({ color: COLOURS[colourIndex++ % COLOURS.length] })
-            );
-            sphere.castShadow = true;
-            scene.add(sphere);
-            playerSpheres.set(playerID, sphere);
-
-            // Assign a chase-cam slot (up to 4 players).
-            if (nextSlot < 4) {
-                playerSlot.set(playerID, nextSlot++);
-            }
-        }
-
-        return playerSpheres.get(playerID);
+    for (let i = 0; i < COLOURS.length; i++) {
+        const sphere = new THREE.Mesh(
+            new THREE.SphereGeometry(0.5, 32, 32),
+            new THREE.MeshStandardMaterial({ color: COLOURS[i] })
+        );
+        sphere.castShadow = true;
+        scene.add(sphere);
+        racerSpheres.set(i, sphere);
     }
 
+    /* ── Chase cams ──
+       One cam per racer slot. Slot layout:  [0] top-left  | [1] top-right
+                                             [2] bot-left  | [3] bot-right
+    */
+    function makeCamera(x, y, z, tx, ty, tz) {
+        const cam = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+        cam.position.set(x, y, z);
+        cam.lookAt(tx, ty, tz);
+        return cam;
+    }
+
+    const cameras = [
+        makeCamera(-8,  6,  8,  0, 0, 0),   // racer 0
+        makeCamera( 8,  6,  8,  0, 0, 0),   // racer 1
+        makeCamera(-8,  6, -8,  0, 0, 0),   // racer 2
+        makeCamera( 8,  6, -8,  0, 0, 0),   // racer 3
+    ];
+
+    /* ── WebSocket ── */
     const ws = new WebSocket({{ .SocketURL }});
 
     ws.addEventListener("message", (event) => {
-        let data;
+        const racers = JSON.parse(event.data);
 
-        try {
-            data = JSON.parse(event.data);
-        } catch {
-            return;
-        }
+        for (const racer of racers) {
+            const sphere = racerSpheres.get(racer.Index);
 
-        for (const [playerID, coords] of Object.entries(data)) {
-            const sphere = ensurePlayer(playerID);
-            sphere.position.set(coords.x, coords.y, coords.z);
+            if (!sphere) continue;
 
-            // Keep the player's chase-cam just behind and above their sphere.
-            const slot = playerSlot.get(playerID);
-            if (slot !== undefined) {
-                const cam = cameras[slot];
-                cam.position.set(coords.x, coords.y + 6, coords.z + 8);
-                cam.lookAt(coords.x, coords.y, coords.z);
-            }
+            const { x, y, z } = racer.Physics;
+
+            sphere.position.set(x, y, z);
+
+            // Keep this racer's chase-cam just behind and above their sphere.
+            const cam = cameras[racer.Index];
+            cam.position.set(x, y + 6, z + 8);
+            cam.lookAt(x, y, z);
         }
     });
 
@@ -146,8 +132,7 @@
 
         renderer.setScissorTest(true);
 
-        const views = quadrants();
-        views.forEach((v, i) => {
+        quadrants().forEach((v, i) => {
             renderer.setViewport(v.left, v.bottom, v.width, v.height);
             renderer.setScissor(v.left, v.bottom, v.width, v.height);
 
