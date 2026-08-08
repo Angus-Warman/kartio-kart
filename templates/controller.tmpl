@@ -309,8 +309,8 @@
             const angle = Math.atan2(dy, dx);
             knobPos = { x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r };
             state.joystick = {
-                x: round1dp(Math.cos(angle) * (r / JOYSTICK_RADIUS)),
-                y: round1dp(Math.sin(angle) * (r / JOYSTICK_RADIUS)),
+                x: round2dp(Math.cos(angle) * (r / JOYSTICK_RADIUS)),
+                y: round2dp(Math.sin(angle) * (r / JOYSTICK_RADIUS)),
             };
         }
 
@@ -334,7 +334,7 @@
         }
 
         function dist(ax, ay, bx, by) { return Math.sqrt((ax - bx) ** 2 + (ay - by) ** 2); }
-        function round1dp(v) { return Math.round(v * 10) / 10; }
+        function round2dp(v) { return Math.round(v * 100) / 100; }
 
         const ws = new WebSocket({{ .SocketURL }})
 

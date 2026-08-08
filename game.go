@@ -6,17 +6,30 @@ import (
 )
 
 type Player struct {
-	ID    string
-	state controllerState
+	ID         string
+	Controller ControllerState
+	Physics    PhysicsState
 }
 
-type controllerState struct {
+type ControllerState struct {
 	JsX  float32 `json:"js_x"`
 	JsY  float32 `json:"js_y"`
 	BtnA bool    `json:"btn_a"`
 	BtnB bool    `json:"btn_b"`
 	BtnX bool    `json:"btn_x"`
 	BtnY bool    `json:"btn_y"`
+}
+
+type PhysicsState struct {
+	X      float32 `json:"x"`
+	Y      float32 `json:"y"`
+	Z      float32 `json:"z"`
+	velX   float32
+	velY   float32
+	velZ   float32
+	accelX float32
+	accelY float32
+	accelZ float32
 }
 
 type Game struct {
@@ -36,7 +49,7 @@ func NewGame() *Game {
 	}
 }
 
-func (g *Game) addPlayer(id string) {
+func (g *Game) AddPlayer(id string) {
 	g.mu.Lock()
 
 	g.players[id] = &Player{
@@ -51,7 +64,7 @@ func (g *Game) addPlayer(id string) {
 	}
 }
 
-func (g *Game) findPlayer(id string) (*Player, bool) {
+func (g *Game) FindPlayer(id string) (*Player, bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -60,7 +73,7 @@ func (g *Game) findPlayer(id string) (*Player, bool) {
 	return p, ok
 }
 
-func (g *Game) playerExists(id string) bool {
+func (g *Game) PlayerExists(id string) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -69,22 +82,20 @@ func (g *Game) playerExists(id string) bool {
 	return ok
 }
 
-func (g *Game) handleMessage(playerID string, state controllerState) bool {
+func (g *Game) HandleMessage(playerID string, state ControllerState) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
 	p, ok := g.players[playerID]
 
-	if !ok || p.state == state {
-		return false
+	if !ok {
+		return
 	}
 
-	p.state = state
-
-	return true
+	p.Controller = state
 }
 
-func (g *Game) lobbyStatusMessage() string {
+func (g *Game) StatusMessage() string {
 	var msg string
 
 	switch numPlayers := len(g.players); numPlayers {
@@ -97,4 +108,13 @@ func (g *Game) lobbyStatusMessage() string {
 	}
 
 	return msg
+}
+
+func (g *Game) Start() {
+	go g.Run()
+}
+
+func (g *Game) Run() {
+	for {
+	}
 }

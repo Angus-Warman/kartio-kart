@@ -21,7 +21,7 @@ const numPlayers = 4
 
 type packet struct {
 	PlayerID string          `json:"playerID"`
-	State    controllerState `json:"state"`
+	State    ControllerState `json:"state"`
 }
 
 type lobbyData struct {
@@ -133,7 +133,7 @@ func (h *Handler) LobbyQR(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) LobbyStatus(w http.ResponseWriter, r *http.Request) {
 	stream := response.Stream(w, r)
 
-	if err := stream.Send(h.game.lobbyStatusMessage()); err != nil {
+	if err := stream.Send(h.game.StatusMessage()); err != nil {
 		log.Println(err)
 		return
 	}
@@ -145,7 +145,7 @@ func (h *Handler) LobbyStatus(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := stream.Send(h.game.lobbyStatusMessage()); err != nil {
+		if err := stream.Send(h.game.StatusMessage()); err != nil {
 			log.Println(err)
 			return
 		}
@@ -155,7 +155,7 @@ func (h *Handler) LobbyStatus(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) JoinGame(w http.ResponseWriter, r *http.Request) {
 	gameID := r.PathValue("gameID")
 	playerID := fmt.Sprint(11111 + rand.Intn(88888))
-	h.game.addPlayer(playerID)
+	h.game.AddPlayer(playerID)
 
 	redirectTo := fmt.Sprintf("http://%v/g/%v/p/%v/controller", r.Host, gameID, playerID)
 	http.Redirect(w, r, redirectTo, http.StatusSeeOther)
@@ -165,7 +165,7 @@ func (h *Handler) Controller(w http.ResponseWriter, r *http.Request) {
 	gameID := r.PathValue("gameID")
 	playerID := r.PathValue("playerID")
 
-	if !h.game.playerExists(playerID) {
+	if !h.game.PlayerExists(playerID) {
 		http.NotFound(w, r)
 		return
 	}
@@ -186,35 +186,30 @@ func (h *Handler) ControllerSocket(w http.ResponseWriter, r *http.Request) {
 
 	g := h.game
 
-	if !g.playerExists(playerID) {
+	if !g.PlayerExists(playerID) {
 		http.NotFound(w, r)
 		return
 	}
 
 	response.WebSocket(func(socket *response.WebSocketConnection) {
-		log.Println("connecting to match socket...")
+		log.Println("connecting to controller socket...")
 
 		for {
 			msg, err := socket.Read()
 
 			if err != nil {
-				log.Println(err)
+				log.Println(err) // Disconnect
 				return
 			}
 
-			var state controllerState
+			var state ControllerState
 
 			if err := json.Unmarshal([]byte(msg), &state); err != nil {
 				log.Println(err)
 				continue
 			}
 
-			if g.handleMessage(playerID, state) {
-				h.broadcastPacket(packet{
-					PlayerID: playerID,
-					State:    state,
-				})
-			}
+			g.HandleMessage(playerID, state)
 		}
 	}).ServeHTTP(w, r)
 }
