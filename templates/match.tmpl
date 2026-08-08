@@ -18,7 +18,8 @@
 
 <div id="scene-container"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 
 <script>
     const container = document.getElementById('scene-container');
@@ -32,7 +33,6 @@
     renderer.shadowMap.enabled = true;
     container.appendChild(renderer.domElement);
 
-    /* ── Lights ── */
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     scene.add(ambientLight);
 
@@ -41,7 +41,6 @@
     directionalLight.castShadow = true;
     scene.add(directionalLight);
 
-    /* ── Arena ── */
     const arenaSize = 20;
 
     const ground = new THREE.Mesh(
@@ -52,21 +51,28 @@
     ground.receiveShadow = true;
     scene.add(ground);
 
-    const grid = new THREE.GridHelper(arenaSize, 20, 0x2a2a38, 0x22222e);
+    const grid = new THREE.GridHelper(arenaSize, 5, 0x2a2a38, 0x22222e);
     scene.add(grid);
 
     /* ── Racers ── */
     const COLOURS = [0xff4444, 0x44ff88, 0x4488ff, 0xffcc00];
-    const racerSpheres = new Map();
+    const racerModels = new Map();
+    const loader = new THREE.GLTFLoader();
 
     for (let i = 0; i < COLOURS.length; i++) {
-        const sphere = new THREE.Mesh(
-            new THREE.SphereGeometry(0.5, 32, 32),
-            new THREE.MeshStandardMaterial({ color: COLOURS[i] })
-        );
-        sphere.castShadow = true;
-        scene.add(sphere);
-        racerSpheres.set(i, sphere);
+        const racerModel = new THREE.Group();
+        loader.load("/public/kart.glb", (gltf) => {
+            gltf.scene.scale.setScalar(0.03)
+            gltf.scene.traverse((node) => {
+                if (node.isMesh) {
+                    node.castShadow = true;
+                    node.material = new THREE.MeshStandardMaterial({ color: COLOURS[i] });
+                }
+            });
+            racerModel.add(gltf.scene);
+        });
+        scene.add(racerModel);
+        racerModels.set(i, racerModel);
     }
 
     /* ── Chase cams ──
@@ -91,20 +97,20 @@
     const ws = new WebSocket({{ .SocketURL }});
 
     ws.addEventListener("message", (event) => {
-        const racers = JSON.parse(event.data);
+        const racerData = JSON.parse(event.data);
 
-        for (const racer of racers) {
-            const sphere = racerSpheres.get(racer.Index);
+        for (const racer of racerData) {
+            const racerModel = racerModels.get(racer.Index);
 
-            if (!sphere) continue;
+            if (!racerModel) continue;
 
             const { x, y, z } = racer.Physics;
 
             // Game physics use X/Y as the ground plane and Z as up.
             // Three.js uses X/Z as the ground plane and Y as up, so swap Y/Z.
-            sphere.position.set(x, z, y);
+            racerModel.position.set(x, z, y);
 
-            // Keep this racer's chase-cam just behind and above their sphere.
+            // Keep this racer's chase-cam just behind and above their kart.
             const cam = cameras[racer.Index];
             cam.position.set(x, z + 6, y + 8);
             cam.lookAt(x, z, y);
@@ -149,7 +155,6 @@
 
     window.addEventListener('resize', () => {
         renderer.setSize(window.innerWidth, window.innerHeight);
-        // Aspect ratios are recalculated each frame inside animate(), nothing else needed.
     });
 </script>
 {{ end }}
