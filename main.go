@@ -22,5 +22,7 @@ func main() {
 		ServeEmbedded(publicFiles).
 		Route("/game/{gameID}/lobby", h.Lobby).
 		Route("/game/{gameID}/controller/{playerID}", h.Controller).
+		Route("/game/{gameID}/controller/{playerID}/qr", h.ControllerQR).
+		Route("/game/{gameID}/controller/{playerID}/ws", h.ControllerSocket).
 		Run()
 }
