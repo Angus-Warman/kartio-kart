@@ -119,16 +119,6 @@
 </head>
 
 <body>
-
-    <div id="status-bar">
-        <div id="ws-url-group">
-            <div id="dot"></div>
-            <input id="ws-url" type="text" value="ws://localhost:8080" spellcheck="false">
-            <button id="connect-btn">Connect</button>
-        </div>
-        <span id="pkt-count">0 pkts</span>
-    </div>
-
     <canvas id="ctrl"></canvas>
 
     <script>
@@ -346,38 +336,15 @@
         function dist(ax, ay, bx, by) { return Math.sqrt((ax - bx) ** 2 + (ay - by) ** 2); }
         function round2(v) { return Math.round(v * 100) / 100; }
 
-        /* ── WebSocket ── */
-        let ws = null, pktCount = 0;
-        const dot = document.getElementById('dot');
-        const pktEl = document.getElementById('pkt-count');
-        const wsInput = document.getElementById('ws-url');
-        const connectBtn = document.getElementById('connect-btn');
-
-        function setDot(s) { dot.className = s; }
-
-        function connect() {
-            if (ws) { ws.close(); ws = null; }
-            const url = wsInput.value.trim();
-            if (!url) return;
-            try { ws = new WebSocket(url); } catch { setDot('error'); return; }
-            ws.onopen = () => { setDot('connected'); connectBtn.textContent = 'Disconnect'; };
-            ws.onclose = () => { setDot(''); connectBtn.textContent = 'Connect'; };
-            ws.onerror = () => setDot('error');
-        }
-
-        connectBtn.addEventListener('click', () => {
-            if (ws && ws.readyState === WebSocket.OPEN) { ws.close(); ws = null; }
-            else connect();
-        });
+        const ws = new WebSocket({{ .SocketURL }})
 
         setInterval(() => {
-            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            if (ws.readyState !== WebSocket.OPEN) return;
             ws.send(JSON.stringify({
                 t: Date.now(),
                 js: { x: state.joystick.x, y: state.joystick.y },
                 btn: { A: state.buttons.A, B: state.buttons.B, X: state.buttons.X, Y: state.buttons.Y },
             }));
-            pktEl.textContent = `${++pktCount} pkts`;
         }, 1000 / TICK_HZ);
 
         /* ── Init ── */

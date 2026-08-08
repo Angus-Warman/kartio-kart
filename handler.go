@@ -19,52 +19,40 @@ var templatesFS embed.FS
 const numPlayers = 4
 
 type Player struct {
-	ID        string
-	Connected bool
+	ID string
 }
 
 type Game struct {
 	mu      sync.Mutex
 	id      string
-	players []*Player
+	players map[string]*Player
 }
 
-func (g *Game) findPlayer(id string) *Player {
+func (g *Game) addPlayer(id string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	for _, p := range g.players {
-		if p.ID == id {
-			return p
-		}
-	}
-
-	return nil
-}
-
-func (g *Game) setConnected(id string, connected bool) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	for _, p := range g.players {
-		if p.ID == id {
-			p.Connected = connected
-			return
-		}
+	g.players[id] = &Player{
+		ID: id,
 	}
 }
 
-func (g *Game) snapshot() []Player {
+func (g *Game) findPlayer(id string) (*Player, bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	players := make([]Player, len(g.players))
+	p, ok := g.players[id]
 
-	for i, p := range g.players {
-		players[i] = Player{ID: p.ID, Connected: p.Connected}
-	}
+	return p, ok
+}
 
-	return players
+func (g *Game) playerExists(id string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	_, ok := g.players[id]
+
+	return ok
 }
 
 type lobbyData struct {
@@ -73,8 +61,7 @@ type lobbyData struct {
 }
 
 type controllerData struct {
-	GameID   string
-	PlayerID string
+	SocketURL string
 }
 
 type Handler struct {
@@ -99,7 +86,8 @@ func NewHandler() (*Handler, error) {
 
 	return &Handler{
 		game: &Game{
-			id: "4321",
+			id:      "4321",
+			players: make(map[string]*Player),
 		},
 		templates: templates,
 	}, nil
@@ -133,8 +121,7 @@ func (h *Handler) RedirectToLobby(w http.ResponseWriter, r *http.Request) {
 
 func (g *Game) lobbyData() lobbyData {
 	return lobbyData{
-		GameID:  g.id,
-		Players: g.snapshot(),
+		GameID: g.id,
 	}
 }
 
@@ -142,7 +129,7 @@ func (h *Handler) Lobby(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "lobby", h.game.lobbyData())
 }
 
-func (h *Handler) JoinQR(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) LobbyQR(w http.ResponseWriter, r *http.Request) {
 	png, err := qrcode.Encode(
 		fmt.Sprintf("http://%v/g/%v/join-game", r.Host, h.game.id),
 		qrcode.Medium,
@@ -161,6 +148,7 @@ func (h *Handler) JoinQR(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) JoinGame(w http.ResponseWriter, r *http.Request) {
 	gameID := r.PathValue("gameID")
 	playerID := fmt.Sprint(11111 + rand.Intn(88888))
+	h.game.addPlayer(playerID)
 
 	redirectTo := fmt.Sprintf("http://%v/g/%v/p/%v/controller", r.Host, gameID, playerID)
 	http.Redirect(w, r, redirectTo, http.StatusSeeOther)
@@ -170,40 +158,46 @@ func (h *Handler) Controller(w http.ResponseWriter, r *http.Request) {
 	gameID := r.PathValue("gameID")
 	playerID := r.PathValue("playerID")
 
-	// if h.game.findPlayer(playerID) == nil {
-	// 	http.NotFound(w, r)
-	// 	return
-	// }
+	if !h.game.playerExists(playerID) {
+		http.NotFound(w, r)
+		return
+	}
+
+	socketURL := fmt.Sprintf("ws://%v/g/%v/p/%v/ws", r.Host, gameID, playerID)
 
 	h.render(w, "controller", controllerData{
-		GameID:   gameID,
-		PlayerID: playerID,
+		SocketURL: socketURL,
 	})
 }
 
 func (h *Handler) ControllerSocket(w http.ResponseWriter, r *http.Request) {
+	log.Println("connecting socket")
+
+	gameID := r.PathValue("gameID")
 	playerID := r.PathValue("playerID")
+	_ = gameID
 
 	g := h.game
 
-	if g.findPlayer(playerID) == nil {
+	if !g.playerExists(playerID) {
 		http.NotFound(w, r)
 		return
 	}
 
 	response.WebSocket(func(socket *response.WebSocketConnection) {
-		g.setConnected(playerID, true)
-		defer g.setConnected(playerID, false)
+		log.Println("connecting to socket...")
 
 		socket.Send("connected")
 
 		for {
-			_, err := socket.ReadMessage()
+			data, err := socket.ReadMessage()
 
 			if err != nil {
 				log.Println(err)
 				return
 			}
+
+			log.Println(data)
 		}
 	}).ServeHTTP(w, r)
 }
