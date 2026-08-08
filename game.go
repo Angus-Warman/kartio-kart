@@ -9,9 +9,12 @@ import (
 
 const (
 	tickInterval = 16 * time.Millisecond // ~60 Hz
+	numRacers    = 4                     // total racer slots (players + autopilots)
 	spawnRadius  = 4.0                   // distance from origin where players spawn
 	accelScale   = 20.0                  // joystick-to-acceleration multiplier
 	drag         = 0.97                  // velocity damping per tick (0=instant stop, 1=no drag)
+	autoSpeed    = 4.0                   // autopilot target speed in m/s
+	autoGain     = 4.0                   // autopilot steering gain (1/s)
 )
 
 type Player struct {
@@ -34,10 +37,19 @@ type ControllerState struct {
 	BtnY bool    `json:"btn_y"`
 }
 
+// Autopilot drives a racer that no human controls.
+type Autopilot struct {
+	Racer *Racer
+}
+
 type PhysicsState struct {
 	X      float32 `json:"x"`
 	Y      float32 `json:"y"`
 	Z      float32 `json:"z"`
+	RotX   float32 `json:"rot_x"`
+	RotY   float32 `json:"rot_y"`
+	RotZ   float32 `json:"rot_z"`
+	RotW   float32 `json:"rot_w"`
 	velX   float32
 	velY   float32
 	velZ   float32
@@ -51,6 +63,7 @@ type Game struct {
 	id           string
 	players      map[string]*Player
 	racers       []*Racer
+	autopilots   []*Autopilot
 	maxPlayers   int
 	playerJoined chan struct{}
 	dataCh       chan string
@@ -58,8 +71,8 @@ type Game struct {
 }
 
 func NewGame() *Game {
-	racers := []*Racer{}
-	numRacers := 4
+	racers := make([]*Racer, numRacers)
+	autopilots := make([]*Autopilot, numRacers)
 
 	for i := range numRacers {
 		racer := &Racer{
@@ -70,17 +83,20 @@ func NewGame() *Game {
 
 		racer.Physics.X = float32(spawnRadius * math.Cos(angle))
 		racer.Physics.Y = float32(spawnRadius * math.Sin(angle))
+		racer.Physics.RotW = 1 // identity quaternion
 
-		racers = append(racers, racer)
+		racers[i] = racer
+		autopilots[i] = &Autopilot{Racer: racer}
 	}
 
 	return &Game{
 		id:           "4321",
-		maxPlayers:   4,
+		maxPlayers:   numRacers,
 		players:      make(map[string]*Player),
 		playerJoined: make(chan struct{}, 1),
 		dataCh:       make(chan string, 1),
 		racers:       racers,
+		autopilots:   autopilots,
 	}
 }
 
@@ -96,6 +112,8 @@ func (g *Game) AddPlayer(id string) bool {
 
 	racer := g.racers[rIdx]
 
+	g.removeAutopilot(rIdx)
+
 	p := &Player{
 		ID:    id,
 		Racer: racer,
@@ -109,6 +127,57 @@ func (g *Game) AddPlayer(id string) bool {
 	}
 
 	return true
+}
+
+// removeAutopilot drops the autopilot controlling the racer at rIdx so a
+// human can take over that slot.
+func (g *Game) removeAutopilot(rIdx int) {
+	for i, a := range g.autopilots {
+		if a.Racer.Index == rIdx {
+			g.autopilots = append(g.autopilots[:i], g.autopilots[i+1:]...)
+			return
+		}
+	}
+}
+
+// Drive steers the racer along a circle of spawnRadius around the origin,
+// chasing the tangent velocity so it converges onto the circular path.
+func (a *Autopilot) Drive(dt float32) {
+	ph := &a.Racer.Physics
+
+	r := float32(math.Sqrt(float64(ph.X*ph.X + ph.Y*ph.Y)))
+
+	if r < 0.001 {
+		r = 0.001
+	}
+
+	// Counter-clockwise tangent to the circle at the racer's position.
+	tx := -ph.Y / r
+	ty := ph.X / r
+
+	ph.velX += (tx*autoSpeed - ph.velX) * autoGain * dt
+	ph.velY += (ty*autoSpeed - ph.velY) * autoGain * dt
+	ph.velZ = 0
+
+	ph.X += ph.velX * dt
+	ph.Y += ph.velY * dt
+	ph.Z += ph.velZ * dt
+}
+
+// updateHeading faces the racer in the direction of travel. Physics use X/Y
+// as the ground plane with Z up, but the quaternion is expressed for the
+// renderer, which uses X/Z as the ground plane with Y up: a yaw of
+// atan2(velY, velX) around the game's up axis maps to a rotation around +Y
+// by its negation. Only steer while actually moving so the racer keeps its
+// last heading when stopped.
+func updateHeading(ph *PhysicsState) {
+	if vx, vy := ph.velX, ph.velY; vx*vx+vy*vy > 1e-4 {
+		half := math.Atan2(float64(vy), float64(vx)) / 2
+		ph.RotW = float32(math.Cos(half))
+		ph.RotY = float32(-math.Sin(half))
+		ph.RotX = 0
+		ph.RotZ = 0
+	}
 }
 
 func (g *Game) FindPlayer(id string) (*Player, bool) {
@@ -192,6 +261,13 @@ func (g *Game) Run() {
 			ph.X += ph.velX * dt
 			ph.Y += ph.velY * dt
 			ph.Z += ph.velZ * dt
+
+			updateHeading(ph)
+		}
+
+		for _, a := range g.autopilots {
+			a.Drive(dt)
+			updateHeading(&a.Racer.Physics)
 		}
 
 		gameData := encode(g.racers)

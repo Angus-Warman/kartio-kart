@@ -63,6 +63,7 @@
         const racerModel = new THREE.Group();
         loader.load("/public/kart.glb", (gltf) => {
             gltf.scene.scale.setScalar(0.03)
+            gltf.scene.rotation.y = Math.PI; // model faces -X, yaw expects +X
             gltf.scene.traverse((node) => {
                 if (node.isMesh) {
                     node.castShadow = true;
@@ -109,6 +110,13 @@
             // Game physics use X/Y as the ground plane and Z as up.
             // Three.js uses X/Z as the ground plane and Y as up, so swap Y/Z.
             racerModel.position.set(x, z, y);
+
+            racerModel.quaternion.set(
+                racer.Physics.rot_x,
+                racer.Physics.rot_y,
+                racer.Physics.rot_z,
+                racer.Physics.rot_w
+            );
 
             // Keep this racer's chase-cam just behind and above their kart.
             const cam = cameras[racer.Index];
