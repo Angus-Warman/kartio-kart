@@ -236,8 +236,7 @@ func (h *Handler) ServerToMatch(w http.ResponseWriter, r *http.Request) {
 		defer h.removeMatchSocket(socket)
 
 		for {
-			gameData := <-h.g.tickCh
-			msg := encode(gameData)
+			msg := <-h.g.dataCh
 
 			err := socket.Send(msg)
 

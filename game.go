@@ -9,9 +9,9 @@ import (
 
 const (
 	tickInterval = 16 * time.Millisecond // ~60 Hz
-	spawnRadius  = 2.0                   // distance from origin where players spawn
-	accelScale   = 10.0                  // joystick-to-acceleration multiplier
-	drag         = 0.85                  // velocity damping per tick (0=instant stop, 1=no drag)
+	spawnRadius  = 4.0                   // distance from origin where players spawn
+	accelScale   = 20.0                  // joystick-to-acceleration multiplier
+	drag         = 0.97                  // velocity damping per tick (0=instant stop, 1=no drag)
 )
 
 type Player struct {
@@ -46,8 +46,6 @@ type PhysicsState struct {
 	accelZ float32
 }
 
-type GameTick []*Racer
-
 type Game struct {
 	mu           sync.Mutex
 	id           string
@@ -55,24 +53,25 @@ type Game struct {
 	racers       []*Racer
 	maxPlayers   int
 	playerJoined chan struct{}
-	tickCh       chan GameTick
+	dataCh       chan string
 	started      bool
 }
 
 func NewGame() *Game {
-	racers := []*Racer{
-		{
-			Index: 0,
-		},
-		{
-			Index: 1,
-		},
-		{
-			Index: 2,
-		},
-		{
-			Index: 3,
-		},
+	racers := []*Racer{}
+	numRacers := 4
+
+	for i := range numRacers {
+		racer := &Racer{
+			Index: i,
+		}
+
+		angle := 2 * math.Pi * float64(i) / float64(numRacers)
+
+		racer.Physics.X = float32(spawnRadius * math.Cos(angle))
+		racer.Physics.Y = float32(spawnRadius * math.Sin(angle))
+
+		racers = append(racers, racer)
 	}
 
 	return &Game{
@@ -80,7 +79,7 @@ func NewGame() *Game {
 		maxPlayers:   4,
 		players:      make(map[string]*Player),
 		playerJoined: make(chan struct{}, 1),
-		tickCh:       make(chan GameTick, 1),
+		dataCh:       make(chan string, 1),
 		racers:       racers,
 	}
 }
@@ -158,33 +157,12 @@ func (g *Game) StatusMessage() string {
 	return msg
 }
 
-func (g *Game) spawnRacers() {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	n := len(g.players)
-	if n == 0 {
-		return
-	}
-
-	for i, r := range g.racers {
-		angle := 2 * math.Pi * float64(i) / float64(n)
-
-		r.Physics = PhysicsState{
-			X: float32(spawnRadius * math.Cos(angle)),
-			Y: float32(spawnRadius * math.Sin(angle)),
-			Z: 0,
-		}
-	}
-}
-
 func (g *Game) Start() {
 	if g.started {
 		return
 	}
 
 	g.started = true
-	g.spawnRacers()
 	go g.Run()
 }
 
@@ -216,7 +194,9 @@ func (g *Game) Run() {
 			ph.Z += ph.velZ * dt
 		}
 
-		g.tickCh <- g.racers
+		gameData := encode(g.racers)
+
+		g.dataCh <- gameData
 
 		g.mu.Unlock()
 	}
