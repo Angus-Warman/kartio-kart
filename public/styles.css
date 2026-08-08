@@ -1,0 +1,33 @@
+.grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    max-width: 64rem;
+    margin: 2rem auto;
+}
+
+.slot {
+    aspect-ratio: 1;
+    display: grid;
+    place-items: center;
+    border: 1px solid #888;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.slot a {
+    display: grid;
+    width: 100%;
+    height: 100%;
+}
+
+.slot img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.slot .connected {
+    font-size: 1.5rem;
+    font-weight: bold;
+}

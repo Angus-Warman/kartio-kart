@@ -1,67 +1,21 @@
-{{ block "lobby" }}
-<!DOCTYPE html>
-<html>
-    <head>
-        <title>Lobby</title>
-        <meta name="color-scheme" content="dark light">
-        <script src="/htmax.min.js"></script>
-        <link rel="stylesheet" href="/styles.css">
-        <style>
-            .grid {
-                display: grid;
-                grid-template-columns: repeat(4, 1fr);
-                gap: 1rem;
-                max-width: 64rem;
-                margin: 2rem auto;
-            }
-
-            .slot {
-                aspect-ratio: 1;
-                display: grid;
-                place-items: center;
-                border: 1px solid #888;
-                border-radius: 8px;
-                overflow: hidden;
-            }
-
-            .slot a {
-                display: grid;
-                width: 100%;
-                height: 100%;
-            }
-
-            .slot img {
-                width: 100%;
-                height: 100%;
-                object-fit: contain;
-            }
-
-            .slot .connected {
-                font-size: 1.5rem;
-                font-weight: bold;
-            }
-        </style>
-    </head>
-    <body>
-        <h1 style="text-align: center">Lobby</h1>
-        <div id="grid"
-             class="grid"
-             hx-get="/game/{{ .GameID }}/lobby"
-             hx-trigger="every 2s"
-             hx-select="#grid"
-             hx-swap="outerHTML">
-            {{ range .Players }}
-            <div class="slot">
-                {{ if .Connected }}
-                    <div class="connected">connected</div>
-                {{ else }}
-                    <a href="/game/{{ $.GameID }}/controller/{{ .ID }}">
-                        <img src="/game/{{ $.GameID }}/controller/{{ .ID }}/qr" alt="QR code">
-                    </a>
-                {{ end }}
-            </div>
-            {{ end }}
-        </div>
-    </body>
-</html>
+{{ define "content" }}
+<h1 style="text-align: center">Lobby</h1>
+<div id="grid"
+     class="grid"
+     hx-get="/game/{{ .GameID }}/lobby"
+     hx-trigger="every 2s"
+     hx-select="#grid"
+     hx-swap="outerHTML">
+    {{ range .Players }}
+    <div class="slot">
+        {{ if .Connected }}
+            <div class="connected">connected</div>
+        {{ else }}
+            <a href="/game/{{ $.GameID }}/controller/{{ .ID }}">
+                <img src="/game/{{ $.GameID }}/controller/{{ .ID }}/qr" alt="QR code">
+            </a>
+        {{ end }}
+    </div>
+    {{ end }}
+</div>
 {{ end }}

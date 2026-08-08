@@ -1,0 +1,16 @@
+{{ define "content" }}
+<h1>Player {{ .PlayerID }}</h1>
+<div id="status">connecting...</div>
+<script>
+    const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(`${scheme}://${location.host}/game/{{ .GameID }}/controller/{{ .PlayerID }}/ws`);
+
+    ws.onmessage = (e) => {
+        document.getElementById('status').textContent = e.data;
+    };
+
+    ws.onclose = () => {
+        document.getElementById('status').textContent = 'disconnected';
+    };
+</script>
+{{ end }}
