@@ -2,10 +2,11 @@ package main
 
 import (
 	"embed"
+	"fmt"
 	"html/template"
 	"log"
+	"math/rand"
 	"net/http"
-	"strconv"
 	"sync"
 
 	"github.com/Angus-Warman/httpmin/response"
@@ -24,6 +25,7 @@ type Player struct {
 
 type Game struct {
 	mu      sync.Mutex
+	id      string
 	players []*Player
 }
 
@@ -76,8 +78,7 @@ type controllerData struct {
 }
 
 type Handler struct {
-	mu        sync.Mutex
-	games     map[string]*Game
+	game      *Game
 	templates map[string]*template.Template
 }
 
@@ -97,39 +98,11 @@ func NewHandler() (*Handler, error) {
 	}
 
 	return &Handler{
-		games:     make(map[string]*Game),
+		game: &Game{
+			id: "4321",
+		},
 		templates: templates,
 	}, nil
-}
-
-func (h *Handler) game(gameID string) (*Game, bool) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	g, ok := h.games[gameID]
-
-	return g, ok
-}
-
-func (h *Handler) getOrCreateGame(gameID string) *Game {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	if g, ok := h.games[gameID]; ok {
-		return g
-	}
-
-	players := make([]*Player, numPlayers)
-
-	for i := range players {
-		players[i] = &Player{ID: strconv.Itoa(i)}
-	}
-
-	g := &Game{players: players}
-
-	h.games[gameID] = g
-
-	return g
 }
 
 func (h *Handler) render(w http.ResponseWriter, page string, data any) {
@@ -148,45 +121,30 @@ func (h *Handler) render(w http.ResponseWriter, page string, data any) {
 	}
 }
 
-func (h *Handler) Lobby(w http.ResponseWriter, r *http.Request) {
-	gameID := r.PathValue("gameID")
+func (h *Handler) RedirectToLobby(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/" {
+		url := fmt.Sprintf("/g/%v/lobby", h.game.id)
+		http.Redirect(w, r, url, http.StatusSeeOther)
+		return
+	}
 
-	g := h.getOrCreateGame(gameID)
+	http.Error(w, "not found", 404)
+}
 
-	h.render(w, "lobby", lobbyData{
-		GameID:  gameID,
+func (g *Game) lobbyData() lobbyData {
+	return lobbyData{
+		GameID:  g.id,
 		Players: g.snapshot(),
-	})
+	}
 }
 
-func (h *Handler) Controller(w http.ResponseWriter, r *http.Request) {
-	gameID := r.PathValue("gameID")
-	playerID := r.PathValue("playerID")
-
-	g, ok := h.game(gameID)
-
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-
-	if g.findPlayer(playerID) == nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	h.render(w, "controller", controllerData{
-		GameID:   gameID,
-		PlayerID: playerID,
-	})
+func (h *Handler) Lobby(w http.ResponseWriter, r *http.Request) {
+	h.render(w, "lobby", h.game.lobbyData())
 }
 
-func (h *Handler) ControllerQR(w http.ResponseWriter, r *http.Request) {
-	gameID := r.PathValue("gameID")
-	playerID := r.PathValue("playerID")
-
+func (h *Handler) JoinQR(w http.ResponseWriter, r *http.Request) {
 	png, err := qrcode.Encode(
-		"http://"+r.Host+"/game/"+gameID+"/controller/"+playerID,
+		fmt.Sprintf("http://%v/g/%v/join-game", r.Host, h.game.id),
 		qrcode.Medium,
 		200,
 	)
@@ -200,16 +158,33 @@ func (h *Handler) ControllerQR(w http.ResponseWriter, r *http.Request) {
 	w.Write(png)
 }
 
-func (h *Handler) ControllerSocket(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) JoinGame(w http.ResponseWriter, r *http.Request) {
+	gameID := r.PathValue("gameID")
+	playerID := fmt.Sprint(11111 + rand.Intn(88888))
+
+	redirectTo := fmt.Sprintf("http://%v/g/%v/p/%v/controller", r.Host, gameID, playerID)
+	http.Redirect(w, r, redirectTo, http.StatusSeeOther)
+}
+
+func (h *Handler) Controller(w http.ResponseWriter, r *http.Request) {
 	gameID := r.PathValue("gameID")
 	playerID := r.PathValue("playerID")
 
-	g, ok := h.game(gameID)
+	// if h.game.findPlayer(playerID) == nil {
+	// 	http.NotFound(w, r)
+	// 	return
+	// }
 
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
+	h.render(w, "controller", controllerData{
+		GameID:   gameID,
+		PlayerID: playerID,
+	})
+}
+
+func (h *Handler) ControllerSocket(w http.ResponseWriter, r *http.Request) {
+	playerID := r.PathValue("playerID")
+
+	g := h.game
 
 	if g.findPlayer(playerID) == nil {
 		http.NotFound(w, r)

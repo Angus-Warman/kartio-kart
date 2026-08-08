@@ -1,21 +1,9 @@
 {{ define "content" }}
 <h1 style="text-align: center">Lobby</h1>
-<div id="grid"
-     class="grid"
-     hx-get="/game/{{ .GameID }}/lobby"
-     hx-trigger="every 2s"
-     hx-select="#grid"
-     hx-swap="outerHTML">
-    {{ range .Players }}
-    <div class="slot">
-        {{ if .Connected }}
-            <div class="connected">connected</div>
-        {{ else }}
-            <a href="/game/{{ $.GameID }}/controller/{{ .ID }}">
-                <img src="/game/{{ $.GameID }}/controller/{{ .ID }}/qr" alt="QR code">
-            </a>
-        {{ end }}
-    </div>
-    {{ end }}
+<div class="grid">
+    <a href="/g/{{ .GameID }}/join">
+        <img src="/g/{{ .GameID }}/join/qr" alt="QR code">
+    </a>
+
 </div>
 {{ end }}

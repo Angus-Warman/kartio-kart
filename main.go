@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"net/http"
 
 	"github.com/Angus-Warman/httpmin"
 )
@@ -19,10 +20,13 @@ func main() {
 	}
 
 	c.
-		ServeEmbedded(publicFiles).
-		Route("/game/{gameID}/lobby", h.Lobby).
-		Route("/game/{gameID}/controller/{playerID}", h.Controller).
-		Route("/game/{gameID}/controller/{playerID}/qr", h.ControllerQR).
-		Route("/game/{gameID}/controller/{playerID}/ws", h.ControllerSocket).
+		RouteHandler("/public/", http.FileServerFS(publicFiles)).
+		Route("/g/{gameID}/lobby", h.Lobby).
+		// Route("/g/{gameID}/lobby/status", h.LobbyStatus).
+		Route("/g/{gameID}/join/qr", h.JoinQR).
+		Route("/g/{gameID}/join-game", h.JoinGame).
+		Route("/g/{gameID}/p/{playerID}/controller", h.Controller).
+		Route("/g/{gameID}/p/{playerID}/ws", h.ControllerSocket).
+		Route("/", h.RedirectToLobby).
 		Run()
 }
