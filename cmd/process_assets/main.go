@@ -29,6 +29,10 @@ func process() error {
 		return err
 	}
 
+	log.Println("Simplifying from", len(tris))
+	tris = geo.Simplify(tris, 0.5, 5.0)
+	log.Println("to", len(tris))
+
 	log.Println("processing triangles")
 	bvh := geo.NewBVH(tris)
 
