@@ -166,7 +166,8 @@ func (h *Handler) JoinGame(w http.ResponseWriter, r *http.Request) {
 	canJoin := h.g.AddPlayer(playerID)
 
 	if !canJoin {
-		return // TODO: Return error message
+		http.Error(w, "game is full", http.StatusConflict)
+		return
 	}
 
 	redirectTo := fmt.Sprintf("http://%v/g/%v/p/%v/controller", r.Host, gameID, playerID)
