@@ -6,6 +6,8 @@
     /* ── Chase cams ──
        One cam per racer slot. Slot layout:  [0] top-left  | [1] top-right
                                              [2] bot-left  | [3] bot-right
+       Each frame trackRacer swings its cam behind the kart along the racer's
+       heading, so turning swings the camera around the kart.
     */
     function makeCamera(x, y, z, tx, ty, tz) {
         const cam = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
@@ -20,6 +22,10 @@
         makeCamera(-8,  6, -8,  0, 0, 0),   // racer 2
         makeCamera( 8,  6, -8,  0, 0, 0),   // racer 3
     ];
+
+    // Chase-cam distance behind the kart and height above it.
+    const CAM_DIST = 6;
+    const CAM_HEIGHT = 4;
 
     // Returns {left, bottom, width, height} for each quadrant in pixels.
     // Three.js setViewport/setScissor use a bottom-left origin.
@@ -37,10 +43,24 @@
     }
 
     function trackRacer(racer, x, y, z) {
-        // Keep this racer's chase-cam just behind and above their kart.
+        // Kart position in three.js space (physics X/Y ground, Z up).
+        const pos = new THREE.Vector3(x, z, y);
+
+        // The racer's yaw quaternion rotates the kart around +Y with +X as
+        // forward, so apply it to +X to get the direction of travel.
+        const q = new THREE.Quaternion(
+            racer.Physics.rot_x,
+            racer.Physics.rot_y,
+            racer.Physics.rot_z,
+            racer.Physics.rot_w,
+        );
+        const forward = new THREE.Vector3(1, 0, 0).applyQuaternion(q);
+
+        // Sit behind the kart, facing it; turning swings the cam around it.
         const cam = cameras[racer.Index];
-        cam.position.set(x, z + 6, y + 8);
-        cam.lookAt(x, z, y);
+        cam.position.copy(pos).addScaledVector(forward, -CAM_DIST);
+        cam.position.y += CAM_HEIGHT;
+        cam.lookAt(pos);
     }
 
     function renderFrame() {
