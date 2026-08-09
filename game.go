@@ -24,9 +24,12 @@ type Player struct {
 }
 
 type Racer struct {
-	Index   int // 0-3
+	Index   int    `json:"Index"`
+	Colour  string `json:"colour"`
 	Physics PhysicsState
 }
+
+var racerColours = []string{"#ff4444", "#44ff88", "#4488ff", "#ffcc00"}
 
 type ControllerState struct {
 	JsX  float32 `json:"js_x"`
@@ -76,7 +79,8 @@ func NewGame() *Game {
 
 	for i := range numRacers {
 		racer := &Racer{
-			Index: i,
+			Index:  i,
+			Colour: racerColours[i],
 		}
 
 		angle := 2 * math.Pi * float64(i) / float64(numRacers)

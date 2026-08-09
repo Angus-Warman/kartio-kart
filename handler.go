@@ -30,11 +30,13 @@ type lobbyData struct {
 
 type controllerData struct {
 	SocketURL string
+	Colour    string
 }
 
 type matchData struct {
-	PlayerIDs []string
-	SocketURL string
+	PlayerIDs   []string
+	SocketURL   string
+	JSONColours string
 }
 
 type Handler struct {
@@ -174,10 +176,16 @@ func (h *Handler) Controller(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	colour := ""
+	if p, ok := h.g.FindPlayer(playerID); ok {
+		colour = p.Racer.Colour
+	}
+
 	socketURL := fmt.Sprintf("ws://%v/g/%v/p/%v/ws", r.Host, gameID, playerID)
 
 	h.render(w, "controller", controllerData{
 		SocketURL: socketURL,
+		Colour:    colour,
 	})
 }
 
@@ -225,8 +233,20 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 
 	socketURL := fmt.Sprintf("ws://%v/g/%v/match/ws", r.Host, gameID)
 
+	colours := make([]string, len(h.g.racers))
+	for i, rc := range h.g.racers {
+		colours[i] = rc.Colour
+	}
+
+	jsonColours, err := json.Marshal(colours)
+	if err != nil {
+		log.Println(err)
+		jsonColours = []byte("[]")
+	}
+
 	h.render(w, "match", matchData{
-		SocketURL: socketURL,
+		SocketURL:   socketURL,
+		JSONColours: string(jsonColours),
 	})
 }
 

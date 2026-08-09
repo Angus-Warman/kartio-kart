@@ -55,7 +55,7 @@
     scene.add(grid);
 
     /* ── Racers ── */
-    const COLOURS = [0xff4444, 0x44ff88, 0x4488ff, 0xffcc00];
+    const COLOURS = JSON.parse({{ .JSONColours }});
     const racerModels = new Map();
     const loader = new THREE.GLTFLoader();
 

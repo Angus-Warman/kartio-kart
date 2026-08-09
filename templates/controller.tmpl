@@ -126,6 +126,7 @@
         const TICK_HZ = 60;
         const JOYSTICK_RADIUS = 70;
         const KNOB_RADIUS = 28;
+        const RACER_COLOUR = "{{ .Colour }}";
 
         /* ── Canvas setup ── */
         const canvas = document.getElementById('ctrl');
@@ -200,8 +201,8 @@
             const kr = KNOB_RADIUS;
 
             const grad = ctx.createRadialGradient(kx - kr * 0.3, ky - kr * 0.3, 2, kx, ky, kr);
-            grad.addColorStop(0, '#6666ff');
-            grad.addColorStop(1, '#3333aa');
+            grad.addColorStop(0, shade(RACER_COLOUR, 1.5));
+            grad.addColorStop(1, shade(RACER_COLOUR, 0.5));
 
             ctx.beginPath();
             ctx.arc(kx, ky, kr, 0, Math.PI * 2);
@@ -335,6 +336,13 @@
 
         function dist(ax, ay, bx, by) { return Math.sqrt((ax - bx) ** 2 + (ay - by) ** 2); }
         function round2dp(v) { return Math.round(v * 100) / 100; }
+        function shade(hex, factor) {
+            const n = parseInt(hex.slice(1), 16);
+            const r = Math.min(255, Math.round(((n >> 16) & 255) * factor));
+            const g = Math.min(255, Math.round(((n >> 8) & 255) * factor));
+            const b = Math.min(255, Math.round((n & 255) * factor));
+            return `rgb(${r},${g},${b})`;
+        }
 
         const ws = new WebSocket({{ .SocketURL }})
 
