@@ -47,7 +47,7 @@ type Handler struct {
 }
 
 func NewHandler() (*Handler, error) {
-	pages := []string{"lobby", "controller", "match"}
+	pages := []string{"lobby", "controller", "match", "arena"}
 
 	templates := make(map[string]*template.Template, len(pages))
 
@@ -165,6 +165,10 @@ func (h *Handler) JoinGame(w http.ResponseWriter, r *http.Request) {
 
 	redirectTo := fmt.Sprintf("http://%v/g/%v/p/%v/controller", r.Host, gameID, playerID)
 	http.Redirect(w, r, redirectTo, http.StatusSeeOther)
+}
+
+func (h *Handler) Arena(w http.ResponseWriter, r *http.Request) {
+	h.render(w, "arena", nil)
 }
 
 func (h *Handler) Controller(w http.ResponseWriter, r *http.Request) {

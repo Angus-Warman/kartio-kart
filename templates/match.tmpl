@@ -51,8 +51,18 @@
     ground.receiveShadow = true;
     scene.add(ground);
 
-    const grid = new THREE.GridHelper(arenaSize, 5, 0x2a2a38, 0x22222e);
-    scene.add(grid);
+    const stadiumLoader = new THREE.GLTFLoader();
+    stadiumLoader.load("/public/wario_stadium.glb", (gltf) => {
+        gltf.scene.scale.setScalar(1);
+        gltf.scene.position.set(0, 0, -0.56); // centre the asymmetric bbox on the origin
+        gltf.scene.traverse((node) => {
+            if (node.isMesh) {
+                node.castShadow = true;
+                node.receiveShadow = true;
+            }
+        });
+        scene.add(gltf.scene);
+    });
 
     /* ── Racers ── */
     const COLOURS = JSON.parse({{ .JSONColours }});

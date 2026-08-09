@@ -29,6 +29,7 @@ func main() {
 		Route("/g/{gameID}/p/{playerID}/ws", h.ControllerToServer).
 		Route("/g/{gameID}/match", h.Match).
 		Route("/g/{gameID}/match/ws", h.ServerToMatch).
+		Route("/arena", h.Arena).
 		Route("/", h.RedirectToLobby).
 		Run()
 }
