@@ -43,21 +43,11 @@
     directionalLight.castShadow = true;
     scene.add(directionalLight);
 
-    const arenaSize = 20;
-
-    const ground = new THREE.Mesh(
-        new THREE.PlaneGeometry(arenaSize, arenaSize),
-        new THREE.MeshStandardMaterial({ color: 0x1a1a24 })
-    );
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-    scene.add(ground);
-
     /* ── Stadium ── */
     const stadiumLoader = new THREE.GLTFLoader();
     stadiumLoader.load("/public/wario_stadium.glb", (gltf) => {
         gltf.scene.scale.setScalar(1);
-        gltf.scene.position.set(0, 0, -0.56); // centre the asymmetric bbox on the origin
+        gltf.scene.position.set(0, -20, 0);
         gltf.scene.traverse((node) => {
             if (node.isMesh) {
                 node.castShadow = true;
@@ -89,8 +79,8 @@
         racerModels.set(i, racerModel);
     }
 
-    /* ── Cameras (page-specific) ── */
-    {{ template "camera-setup" . }}
+    /* ── Camera & rendering (page-specific) ── */
+    {{ template "camera" . }}
 
     /* ── WebSocket ── */
     const ws = new WebSocket({{ .SocketURL }});
@@ -116,7 +106,7 @@
                 racer.Physics.rot_w
             );
 
-            {{ template "camera-track" . }}
+            trackRacer(racer, x, y, z);
         }
     });
 
@@ -124,7 +114,7 @@
     function animate() {
         requestAnimationFrame(animate);
 
-        {{ template "camera-frame" . }}
+        renderFrame();
     }
 
     animate();

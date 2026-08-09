@@ -2,7 +2,7 @@
 {{ template "scene" . }}
 {{ end }}
 
-{{ define "camera-setup" }}
+{{ define "camera" }}
     /* ── Chase cams ──
        One cam per racer slot. Slot layout:  [0] top-left  | [1] top-right
                                              [2] bot-left  | [3] bot-right
@@ -35,25 +35,25 @@
             { left: hw, bottom: 0,  width: hw, height: hh }, // slot 3
         ];
     }
-{{ end }}
 
-{{ define "camera-track" }}
-    // Keep this racer's chase-cam just behind and above their kart.
-    const cam = cameras[racer.Index];
-    cam.position.set(x, z + 6, y + 8);
-    cam.lookAt(x, z, y);
-{{ end }}
+    function trackRacer(racer, x, y, z) {
+        // Keep this racer's chase-cam just behind and above their kart.
+        const cam = cameras[racer.Index];
+        cam.position.set(x, z + 6, y + 8);
+        cam.lookAt(x, z, y);
+    }
 
-{{ define "camera-frame" }}
-    renderer.setScissorTest(true);
+    function renderFrame() {
+        renderer.setScissorTest(true);
 
-    quadrants().forEach((v, i) => {
-        renderer.setViewport(v.left, v.bottom, v.width, v.height);
-        renderer.setScissor(v.left, v.bottom, v.width, v.height);
+        quadrants().forEach((v, i) => {
+            renderer.setViewport(v.left, v.bottom, v.width, v.height);
+            renderer.setScissor(v.left, v.bottom, v.width, v.height);
 
-        cameras[i].aspect = v.width / v.height;
-        cameras[i].updateProjectionMatrix();
+            cameras[i].aspect = v.width / v.height;
+            cameras[i].updateProjectionMatrix();
 
-        renderer.render(scene, cameras[i]);
-    });
+            renderer.render(scene, cameras[i]);
+        });
+    }
 {{ end }}
