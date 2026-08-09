@@ -71,7 +71,7 @@ type Game struct {
 	playerJoined chan struct{}
 	dataCh       chan string
 	started      bool
-	physics      *Engine
+	engine       *Engine
 }
 
 func NewGame() (*Game, error) {
@@ -108,7 +108,7 @@ func NewGame() (*Game, error) {
 		dataCh:       make(chan string, 1),
 		racers:       racers,
 		autopilots:   autopilots,
-		physics:      engine,
+		engine:       engine,
 	}, nil
 }
 
@@ -282,10 +282,18 @@ func (g *Game) Run() {
 			updateHeading(&a.Racer.Physics)
 		}
 
+		for _, racer := range g.racers {
+			g.engine.Step(racer, dt)
+		}
+
 		gameData := encode(g.racers)
 
 		g.dataCh <- gameData
 
 		g.mu.Unlock()
 	}
+}
+
+func (g *Game) Step(r *Racer) {
+
 }
