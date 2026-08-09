@@ -67,8 +67,14 @@ func NewHandler() (*Handler, error) {
 		templates[page] = t
 	}
 
+	g, err := NewGame()
+
+	if err != nil {
+		return nil, err
+	}
+
 	return &Handler{
-		g:         NewGame(),
+		g:         g,
 		templates: templates,
 	}, nil
 }

@@ -71,9 +71,16 @@ type Game struct {
 	playerJoined chan struct{}
 	dataCh       chan string
 	started      bool
+	physics      *Engine
 }
 
-func NewGame() *Game {
+func NewGame() (*Game, error) {
+	engine, err := NewEngine()
+
+	if err != nil {
+		return nil, err
+	}
+
 	racers := make([]*Racer, numRacers)
 	autopilots := make([]*Autopilot, numRacers)
 
@@ -101,7 +108,8 @@ func NewGame() *Game {
 		dataCh:       make(chan string, 1),
 		racers:       racers,
 		autopilots:   autopilots,
-	}
+		physics:      engine,
+	}, nil
 }
 
 func (g *Game) AddPlayer(id string) bool {
