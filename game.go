@@ -169,7 +169,9 @@ func (a *Autopilot) Drive(dt float32) {
 
 	ph.velX += (tx*autoSpeed - ph.velX) * autoGain * dt
 	ph.velY += (ty*autoSpeed - ph.velY) * autoGain * dt
-	ph.velZ = 0
+
+	// velZ is left to the engine: gravity accumulates it and ground contact
+	// clears it, so the autopilot stays glued to the track surface.
 
 	ph.X += ph.velX * dt
 	ph.Y += ph.velY * dt
