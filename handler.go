@@ -47,12 +47,18 @@ type Handler struct {
 }
 
 func NewHandler() (*Handler, error) {
-	pages := []string{"lobby", "controller", "match", "arena"}
+	pages := []string{"lobby", "controller", "match", "arena", "spectate"}
 
 	templates := make(map[string]*template.Template, len(pages))
 
 	for _, page := range pages {
-		t, err := template.ParseFS(templatesFS, "templates/layout.tmpl", "templates/"+page+".tmpl")
+		files := []string{"templates/layout.tmpl", "templates/" + page + ".tmpl"}
+
+		if page == "match" || page == "spectate" {
+			files = append(files, "templates/scene.tmpl")
+		}
+
+		t, err := template.ParseFS(templatesFS, files...)
 
 		if err != nil {
 			return nil, err
@@ -237,21 +243,38 @@ func (h *Handler) Match(w http.ResponseWriter, r *http.Request) {
 
 	socketURL := fmt.Sprintf("ws://%v/g/%v/match/ws", r.Host, gameID)
 
+	h.render(w, "match", matchData{
+		SocketURL:   socketURL,
+		JSONColours: h.coloursJSON(),
+	})
+}
+
+func (h *Handler) Spectate(w http.ResponseWriter, r *http.Request) {
+	gameID := r.PathValue("gameID")
+
+	h.g.Start()
+
+	socketURL := fmt.Sprintf("ws://%v/g/%v/match/ws", r.Host, gameID)
+
+	h.render(w, "spectate", matchData{
+		SocketURL:   socketURL,
+		JSONColours: h.coloursJSON(),
+	})
+}
+
+func (h *Handler) coloursJSON() string {
 	colours := make([]string, len(h.g.racers))
 	for i, rc := range h.g.racers {
 		colours[i] = rc.Colour
 	}
 
-	jsonColours, err := json.Marshal(colours)
+	b, err := json.Marshal(colours)
 	if err != nil {
 		log.Println(err)
-		jsonColours = []byte("[]")
+		return "[]"
 	}
 
-	h.render(w, "match", matchData{
-		SocketURL:   socketURL,
-		JSONColours: string(jsonColours),
-	})
+	return string(b)
 }
 
 func (h *Handler) ServerToMatch(w http.ResponseWriter, r *http.Request) {

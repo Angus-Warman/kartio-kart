@@ -1,0 +1,136 @@
+{{ define "scene" }}
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    body {
+        background: #0d0d12;
+        overflow: hidden;
+    }
+
+    canvas {
+        display: block;
+    }
+</style>
+
+<div id="scene-container"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+<script>
+    const container = document.getElementById('scene-container');
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0d0d12);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.shadowMap.enabled = true;
+    container.appendChild(renderer.domElement);
+
+    /* ── Lights ── */
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(5, 15, 5);
+    directionalLight.castShadow = true;
+    scene.add(directionalLight);
+
+    const arenaSize = 20;
+
+    const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(arenaSize, arenaSize),
+        new THREE.MeshStandardMaterial({ color: 0x1a1a24 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    /* ── Stadium ── */
+    const stadiumLoader = new THREE.GLTFLoader();
+    stadiumLoader.load("/public/wario_stadium.glb", (gltf) => {
+        gltf.scene.scale.setScalar(1);
+        gltf.scene.position.set(0, 0, -0.56); // centre the asymmetric bbox on the origin
+        gltf.scene.traverse((node) => {
+            if (node.isMesh) {
+                node.castShadow = true;
+                node.receiveShadow = true;
+            }
+        });
+        scene.add(gltf.scene);
+    });
+
+    /* ── Racers ── */
+    const COLOURS = JSON.parse({{ .JSONColours }});
+    const racerModels = new Map();
+    const loader = new THREE.GLTFLoader();
+
+    for (let i = 0; i < COLOURS.length; i++) {
+        const racerModel = new THREE.Group();
+        loader.load("/public/kart.glb", (gltf) => {
+            gltf.scene.scale.setScalar(0.03)
+            gltf.scene.rotation.y = Math.PI; // model faces -X, yaw expects +X
+            gltf.scene.traverse((node) => {
+                if (node.isMesh) {
+                    node.castShadow = true;
+                    node.material = new THREE.MeshStandardMaterial({ color: COLOURS[i] });
+                }
+            });
+            racerModel.add(gltf.scene);
+        });
+        scene.add(racerModel);
+        racerModels.set(i, racerModel);
+    }
+
+    /* ── Cameras (page-specific) ── */
+    {{ template "camera-setup" . }}
+
+    /* ── WebSocket ── */
+    const ws = new WebSocket({{ .SocketURL }});
+
+    ws.addEventListener("message", (event) => {
+        const racerData = JSON.parse(event.data);
+
+        for (const racer of racerData) {
+            const racerModel = racerModels.get(racer.Index);
+
+            if (!racerModel) continue;
+
+            const { x, y, z } = racer.Physics;
+
+            // Game physics use X/Y as the ground plane and Z as up.
+            // Three.js uses X/Z as the ground plane and Y as up, so swap Y/Z.
+            racerModel.position.set(x, z, y);
+
+            racerModel.quaternion.set(
+                racer.Physics.rot_x,
+                racer.Physics.rot_y,
+                racer.Physics.rot_z,
+                racer.Physics.rot_w
+            );
+
+            {{ template "camera-track" . }}
+        }
+    });
+
+    /* ── Animation loop ── */
+    function animate() {
+        requestAnimationFrame(animate);
+
+        {{ template "camera-frame" . }}
+    }
+
+    animate();
+
+    window.addEventListener('resize', () => {
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+</script>
+{{ end }}

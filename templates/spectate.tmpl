@@ -1,0 +1,26 @@
+{{ define "content" }}
+{{ template "scene" . }}
+{{ end }}
+
+{{ define "camera-setup" }}
+    /* ── Freecam ── */
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(15, 10, 15);
+    camera.lookAt(0, 0, 0);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 0, 0);
+    controls.update();
+{{ end }}
+
+{{ define "camera-track" }}
+{{ end }}
+
+{{ define "camera-frame" }}
+    controls.update();
+
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+
+    renderer.render(scene, camera);
+{{ end }}
