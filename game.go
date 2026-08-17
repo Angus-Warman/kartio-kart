@@ -11,10 +11,11 @@ const (
 	tickInterval = 16 * time.Millisecond // ~60 Hz
 	numRacers    = 4                     // total racer slots (players + autopilots)
 	spawnRadius  = 4.0                   // distance from origin where players spawn
-	accelScale   = 20.0                  // joystick-to-acceleration multiplier
+	accelScale   = 20.0                  // forward thrust multiplier (m/s²)
+	turnSpeed    = 3.0                   // yaw rate when joystick is fully left/right (rad/s)
 	drag         = 0.97                  // velocity damping per tick (0=instant stop, 1=no drag)
-	autoSpeed    = 4.0                   // autopilot target speed in m/s
-	autoGain     = 4.0                   // autopilot steering gain (1/s)
+	autoThrust   = 6.0                   // autopilot forward thrust (m/s²)
+	autoTurnRate = 0.45                  // autopilot yaw rate (rad/s), produces a gentle right-hand circle
 )
 
 type Player struct {
@@ -24,8 +25,10 @@ type Player struct {
 }
 
 type Racer struct {
-	Index   int    `json:"Index"`
-	Colour  string `json:"colour"`
+	Index   int     `json:"Index"`
+	Colour  string  `json:"colour"`
+	Heading float64 // current yaw angle in radians (ground plane)
+	Thrust  float32 // forward acceleration this tick (m/s²)
 	Physics PhysicsState
 }
 
@@ -40,9 +43,15 @@ type ControllerState struct {
 	BtnY bool    `json:"btn_y"`
 }
 
-// Autopilot drives a racer that no human controls.
+// Autopilot owns a Racer and writes Heading/Thrust directly each tick.
+// Think() is the only method that needs to change when a smarter brain arrives.
 type Autopilot struct {
 	Racer *Racer
+}
+
+func (a *Autopilot) Drive(dt float32) {
+	a.Racer.Heading += float64(autoTurnRate * dt)
+	a.Racer.Thrust = autoThrust
 }
 
 type PhysicsState struct {
@@ -65,8 +74,8 @@ type Game struct {
 	mu           sync.Mutex
 	id           string
 	players      map[string]*Player
-	racers       []*Racer
 	autopilots   []*Autopilot
+	racers       []*Racer
 	maxPlayers   int
 	playerJoined chan struct{}
 	dataCh       chan string
@@ -82,6 +91,7 @@ func NewGame() (*Game, error) {
 	}
 
 	racers := make([]*Racer, numRacers)
+	players := make(map[string]*Player)
 	autopilots := make([]*Autopilot, numRacers)
 
 	for i := range numRacers {
@@ -103,11 +113,11 @@ func NewGame() (*Game, error) {
 	return &Game{
 		id:           "4321",
 		maxPlayers:   numRacers,
-		players:      make(map[string]*Player),
+		players:      players,
+		autopilots:   autopilots,
 		playerJoined: make(chan struct{}, 1),
 		dataCh:       make(chan string, 1),
 		racers:       racers,
-		autopilots:   autopilots,
 		engine:       engine,
 	}, nil
 }
@@ -120,18 +130,21 @@ func (g *Game) AddPlayer(id string) bool {
 		return false
 	}
 
+	// Claim the next racer slot and retire its autopilot.
 	rIdx := len(g.players)
-
 	racer := g.racers[rIdx]
 
-	g.removeAutopilot(rIdx)
+	for i, a := range g.autopilots {
+		if a.Racer.Index == rIdx {
+			g.autopilots = append(g.autopilots[:i], g.autopilots[i+1:]...)
+			break
+		}
+	}
 
-	p := &Player{
+	g.players[id] = &Player{
 		ID:    id,
 		Racer: racer,
 	}
-
-	g.players[id] = p
 
 	select {
 	case g.playerJoined <- struct{}{}:
@@ -139,59 +152,6 @@ func (g *Game) AddPlayer(id string) bool {
 	}
 
 	return true
-}
-
-// removeAutopilot drops the autopilot controlling the racer at rIdx so a
-// human can take over that slot.
-func (g *Game) removeAutopilot(rIdx int) {
-	for i, a := range g.autopilots {
-		if a.Racer.Index == rIdx {
-			g.autopilots = append(g.autopilots[:i], g.autopilots[i+1:]...)
-			return
-		}
-	}
-}
-
-// Drive steers the racer along a circle of spawnRadius around the origin,
-// chasing the tangent velocity so it converges onto the circular path.
-func (a *Autopilot) Drive(dt float32) {
-	ph := &a.Racer.Physics
-
-	r := float32(math.Sqrt(float64(ph.X*ph.X + ph.Y*ph.Y)))
-
-	if r < 0.001 {
-		r = 0.001
-	}
-
-	// Counter-clockwise tangent to the circle at the racer's position.
-	tx := -ph.Y / r
-	ty := ph.X / r
-
-	ph.velX += (tx*autoSpeed - ph.velX) * autoGain * dt
-	ph.velY += (ty*autoSpeed - ph.velY) * autoGain * dt
-
-	// velZ is left to the engine: gravity accumulates it and ground contact
-	// clears it, so the autopilot stays glued to the track surface.
-
-	ph.X += ph.velX * dt
-	ph.Y += ph.velY * dt
-	ph.Z += ph.velZ * dt
-}
-
-// updateHeading faces the racer in the direction of travel. Physics use X/Y
-// as the ground plane with Z up, but the quaternion is expressed for the
-// renderer, which uses X/Z as the ground plane with Y up: a yaw of
-// atan2(velY, velX) around the game's up axis maps to a rotation around +Y
-// by its negation. Only steer while actually moving so the racer keeps its
-// last heading when stopped.
-func updateHeading(ph *PhysicsState) {
-	if vx, vy := ph.velX, ph.velY; vx*vx+vy*vy > 1e-4 {
-		half := math.Atan2(float64(vy), float64(vx)) / 2
-		ph.RotW = float32(math.Cos(half))
-		ph.RotY = float32(-math.Sin(half))
-		ph.RotX = 0
-		ph.RotZ = 0
-	}
 }
 
 func (g *Game) FindPlayer(id string) (*Player, bool) {
@@ -257,35 +217,44 @@ func (g *Game) Run() {
 
 	for range ticker.C {
 		g.mu.Lock()
+
+		// Autopilots write Heading/Thrust directly onto their Racer.
+		for _, a := range g.autopilots {
+			a.Drive(dt)
+		}
+
+		// Players translate joystick input into Heading/Thrust on their Racer.
 		for _, p := range g.players {
-			ph := &p.Racer.Physics
-			ctrl := p.Controller
+			// JsX yaws the heading; JsY sets forward thrust (negative = forward).
+			p.Racer.Heading += float64(p.Controller.JsX) * turnSpeed * float64(dt)
+			p.Racer.Thrust = float32(-float64(p.Controller.JsY) * accelScale)
+		}
 
-			// Joystick drives acceleration on X/Y axes.
-			ph.accelX = ctrl.JsX * accelScale
-			ph.accelY = ctrl.JsY * accelScale
-			// accelZ stays zero unless something else sets it (e.g. jump via BtnA).
+		// Unified physics pass — same for every racer regardless of input source.
+		for _, r := range g.racers {
+			ph := &r.Physics
 
-			// Integrate acceleration into velocity, then apply drag.
+			// Apply heading to quaternion.
+			half := r.Heading / 2
+			ph.RotW = float32(math.Cos(half))
+			ph.RotY = float32(-math.Sin(half))
+			ph.RotX = 0
+			ph.RotZ = 0
+
+			// Project thrust along the heading vector.
+			ph.accelX = float32(float64(r.Thrust) * math.Cos(r.Heading))
+			ph.accelY = float32(float64(r.Thrust) * math.Sin(r.Heading))
+
+			// Integrate acceleration → velocity → position.
 			ph.velX = (ph.velX + ph.accelX*dt) * drag
 			ph.velY = (ph.velY + ph.accelY*dt) * drag
 			ph.velZ = (ph.velZ + ph.accelZ*dt) * drag
 
-			// Integrate velocity into position.
 			ph.X += ph.velX * dt
 			ph.Y += ph.velY * dt
 			ph.Z += ph.velZ * dt
 
-			updateHeading(ph)
-		}
-
-		for _, a := range g.autopilots {
-			a.Drive(dt)
-			updateHeading(&a.Racer.Physics)
-		}
-
-		for _, racer := range g.racers {
-			g.engine.Step(racer, dt)
+			g.engine.Step(r, dt)
 		}
 
 		gameData := encode(g.racers)
